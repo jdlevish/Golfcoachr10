@@ -101,7 +101,7 @@ export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {
     avgBallSpeedMph: avg(shots.map((s) => s.ballSpeedMph)),
     avgLaunchAngleDeg: avg(shots.map((s) => s.launchAngleDeg)),
     avgSpinRpm: avg(shots.map((s) => s.spinRpm)),
-    clubs: [...grouped.entries()]
+    clubs: Array.from(grouped.entries())
       .map(([name, list]) => ({
         name,
         shots: list.length,
