@@ -127,6 +127,78 @@ export default function CsvUploader() {
               <h3>Avg Spin</h3>
               <p>{formatValue(summary.avgSpinRpm, ' rpm')}</p>
             </article>
+            <article>
+              <h3>Gapping Rows</h3>
+              <p>{ladder.rows.length}</p>
+            </article>
+            <article>
+              <h3>Gap Alerts</h3>
+              <p>{problematicGapCount}</p>
+            </article>
+          </section>
+
+          <label className="toggle-row" htmlFor="showOutliers">
+            <input
+              id="showOutliers"
+              type="checkbox"
+              checked={showOutliers}
+              onChange={(event) => setShowOutliers(event.target.checked)}
+            />
+            Include outlier shots in summary calculations
+          </label>
+
+
+
+          <section>
+            <h2>Gapping Ladder</h2>
+            <p className="helper-text">
+              Sprint 2 Part A: median-carry ladder with adjacent gap health warnings (overlap, compressed, cliff).
+            </p>
+
+            {ladder.insights.length > 0 && (
+              <ul className="insights-list">
+                {ladder.insights.map((insight) => (
+                  <li key={insight.message} className={`insight insight-${insight.severity}`}>
+                    {insight.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {ladder.rows.length === 0 ? (
+              <p className="helper-text">
+                No gapping ladder rows yet. Make sure your CSV includes carry distance and at least one recognized club type.
+              </p>
+            ) : (
+              <table>
+              <thead>
+                <tr>
+                  <th>Club</th>
+                  <th>Median Carry</th>
+                  <th>P10–P90 Carry</th>
+                  <th>Gap To Next</th>
+                  <th>Status</th>
+                  <th>Warning</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ladder.rows.map((row) => (
+                  <tr key={row.club}>
+                    <td>{row.displayClub}</td>
+                    <td>{formatValue(row.medianCarryYds, ' yds')}</td>
+                    <td>{formatRange(row.p10CarryYds, row.p90CarryYds, ' yds')}</td>
+                    <td>{formatValue(row.gapToNextYds, ' yds')}</td>
+                    <td>
+                      <span className={`gap-badge ${row.gapStatus ? `gap-${row.gapStatus}` : 'gap-none'}`}>
+                        {formatGapStatus(row.gapStatus)}
+                      </span>
+                    </td>
+                    <td>{row.warning ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            )}
           </section>
 
           <label className="toggle-row" htmlFor="showOutliers">
