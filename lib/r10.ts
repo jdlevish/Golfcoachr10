@@ -140,9 +140,6 @@ const avg = (values: Array<number | null>) => {
   return Math.round((total / numbers.length) * 10) / 10;
 };
 
-/**
- * Linear interpolation quantile.
- */
 const quantile = (values: number[], q: number) => {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -155,22 +152,22 @@ const quantile = (values: number[], q: number) => {
   return sorted[base];
 };
 
+const roundedQuantile = (values: Array<number | null>, q: number) => {
+  const numbers = toNumericArray(values);
+  if (!numbers.length) return null;
+  const result = quantile(numbers, q);
+  return result !== null ? Math.round(result * 10) / 10 : null;
+};
+
 const stdDev = (values: Array<number | null>) => {
   const numbers = toNumericArray(values);
   if (numbers.length < 2) return null;
-
-  const mean = numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
-  const variance =
-    numbers.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
-    (numbers.length - 1);
-
+  
+  const mean = numbers.reduce((sum, val) => sum + val, 0) / numbers.length;
+  const squaredDiffs = numbers.map(val => Math.pow(val - mean, 2));
+  const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / numbers.length;
+  
   return Math.round(Math.sqrt(variance) * 10) / 10;
-};
-
-const roundedQuantile = (values: Array<number | null>, q: number) => {
-  const numbers = toNumericArray(values);
-  const value = quantile(numbers, q);
-  return value === null ? null : Math.round(value * 10) / 10;
 };
 
 const buildExpectedColumns = () =>
@@ -187,48 +184,6 @@ const getDetectedColumns = (rows: Record<string, string>[]) => {
     }
   }
   return known;
-};
-
-
-const wedgeOrder = ['lob wedge', 'sand wedge', 'gap wedge', 'approach wedge', 'pitching wedge', 'wedge'];
-
-const getClubSortKey = (clubType: string) => {
-  const normalized = clubType.trim().toLowerCase();
-
-  const wedgeIndex = wedgeOrder.indexOf(normalized);
-  if (wedgeIndex >= 0) return { group: 0, rank: wedgeIndex, label: normalized };
-
-  const ironMatch = normalized.match(/^(\d+)\s*iron$/);
-  if (ironMatch) {
-    const ironNumber = Number(ironMatch[1]);
-    // Lower rank should render first. 9-iron before 8-iron ... before 4-iron.
-    return { group: 1, rank: 10 - ironNumber, label: normalized };
-  }
-
-  const hybridMatch = normalized.match(/^(\d+)\s*hybrid$/);
-  if (hybridMatch) {
-    return { group: 2, rank: Number(hybridMatch[1]), label: normalized };
-  }
-
-  const woodMatch = normalized.match(/^(\d+)\s*wood$/);
-  if (woodMatch) {
-    return { group: 3, rank: Number(woodMatch[1]), label: normalized };
-  }
-
-  if (normalized === 'driver') {
-    return { group: 4, rank: 0, label: normalized };
-  }
-
-  return { group: 5, rank: 999, label: normalized };
-};
-
-const compareClubTypeOrder = (a: string, b: string) => {
-  const aKey = getClubSortKey(a);
-  const bKey = getClubSortKey(b);
-
-  if (aKey.group !== bKey.group) return aKey.group - bKey.group;
-  if (aKey.rank !== bKey.rank) return aKey.rank - bKey.rank;
-  return aKey.label.localeCompare(bKey.label);
 };
 
 const markCarryOutliers = (shots: ShotRecord[]) => {
