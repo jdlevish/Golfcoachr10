@@ -27,6 +27,7 @@ Then open [http://localhost:3000](http://localhost:3000).
 
 - See `docs/sprint1-part-a.md` for the normalization/diagnostics design.
 - See `docs/sprint1-part-b.md` for per-club robust metric definitions.
+<<<<<<< ours
 
 ## Long-term storage options
 
@@ -73,6 +74,10 @@ Start with **SQLite + Prisma** for Sprint 1/2 speed and predictable analytics lo
 ## Import pipeline documentation
 
 - See `docs/sprint1-part-a.md` for the normalization/diagnostics design.
+=======
+- See `docs/sprint2-part-a.md` for gapping ladder logic and warning classifications.
+- See `docs/sprint2-part-b.md` for Coach v1 limiter and action-plan logic.
+>>>>>>> theirs
 
 ## Long-term storage options
 
@@ -118,5 +123,10 @@ Start with **SQLite + Prisma** for Sprint 1/2 speed and predictable analytics lo
 
 ## Next suggested steps
 
+<<<<<<< ours
 - Sprint 2: gapping ladder + overlap warnings + Coach v1.
 - Add authenticated users and multi-session trend tracking.
+=======
+- Sprint 3: multi-session persistence and trend tracking.
+- Add authenticated users and progress goals.
+>>>>>>> theirs
