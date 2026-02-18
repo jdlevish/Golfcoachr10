@@ -2,16 +2,146 @@
 
 import Papa from 'papaparse';
 import { useMemo, useState } from 'react';
-import {
-  buildCoachPlan,
-  buildGappingLadder,
-  buildImportReport,
-  mapRowsToShots,
-  summarizeSession,
-  type GapStatus,
-  type ImportReport,
-  type ShotRecord
-} from '@/lib/r10';
+import { buildImportReport, mapRowsToShots, summarizeSession, type ImportReport, type ShotRecord } from '@/lib/r10';
+
+type GapStatus = 'optimal' | 'compressed' | 'overlap' | 'cliff' | null;
+
+type LadderRow = {
+  club: string;
+  displayClub: string;
+  medianCarryYds: number | null;
+  p10CarryYds: number | null;
+  p90CarryYds: number | null;
+  gapToNextYds: number | null;
+  gapStatus: GapStatus;
+  warning: string | null;
+};
+
+type LadderInsight = {
+  message: string;
+  severity: 'info' | 'warning' | 'error';
+};
+
+type GappingLadder = {
+  rows: LadderRow[];
+  insights: LadderInsight[];
+};
+
+const formatGapStatus = (status: GapStatus): string => {
+  switch (status) {
+    case 'optimal': return 'Optimal';
+    case 'compressed': return 'Compressed';
+    case 'overlap': return 'Overlap';
+    case 'cliff': return 'Cliff';
+    default: return '—';
+  }
+};
+
+const buildEmptyLadder = (): GappingLadder => ({
+  rows: [],
+  insights: []
+});
+
+/**
+ * Builds a gapping ladder from club data, analyzing the distance gaps between clubs
+ */
+const buildGappingLadder = (clubs: Array<{
+  name: string;
+  displayName: string;
+  medianCarryYds: number | null;
+  p10CarryYds: number | null;
+  p90CarryYds: number | null;
+}>): GappingLadder => {
+  // Filter out clubs with no median carry data
+  const validClubs = clubs
+    .filter(club => club.medianCarryYds !== null)
+    .sort((a, b) => {
+      // Sort by median carry distance (descending)
+      const aCarry = a.medianCarryYds || 0;
+      const bCarry = b.medianCarryYds || 0;
+      return bCarry - aCarry;
+    });
+
+  if (validClubs.length < 2) {
+    return {
+      rows: validClubs.map(club => ({
+        club: club.name,
+        displayClub: club.displayName,
+        medianCarryYds: club.medianCarryYds,
+        p10CarryYds: club.p10CarryYds,
+        p90CarryYds: club.p90CarryYds,
+        gapToNextYds: null,
+        gapStatus: null,
+        warning: null
+      })),
+      insights: validClubs.length === 0 
+        ? [{ message: 'No clubs with valid carry data found.', severity: 'info' }]
+        : [{ message: 'Need at least two clubs to analyze gapping.', severity: 'info' }]
+    };
+  }
+
+  // Calculate gaps and analyze them
+  const rows: LadderRow[] = [];
+  const insights: LadderInsight[] = [];
+  let problematicGaps = 0;
+
+  for (let i = 0; i < validClubs.length; i++) {
+    const club = validClubs[i];
+    const nextClub = i < validClubs.length - 1 ? validClubs[i + 1] : null;
+    
+    const gapToNextYds = nextClub && club.medianCarryYds && nextClub.medianCarryYds
+      ? club.medianCarryYds - nextClub.medianCarryYds
+      : null;
+    
+    // Determine gap status
+    let gapStatus: GapStatus = null;
+    let warning: string | null = null;
+    
+    if (gapToNextYds !== null && nextClub) {
+      if (gapToNextYds < 0) {
+        gapStatus = 'overlap';
+        warning = `${club.displayName} carries shorter than ${nextClub.displayName}`;
+        problematicGaps++;
+      } else if (gapToNextYds < 8) {
+        gapStatus = 'compressed';
+        warning = `Gap to next club is only ${gapToNextYds.toFixed(1)} yards`;
+        problematicGaps++;
+      } else if (gapToNextYds > 25) {
+        gapStatus = 'cliff';
+        warning = `Large ${gapToNextYds.toFixed(1)} yard gap to next club`;
+        problematicGaps++;
+      } else {
+        gapStatus = 'optimal';
+      }
+    }
+    
+    rows.push({
+      club: club.name,
+      displayClub: club.displayName,
+      medianCarryYds: club.medianCarryYds,
+      p10CarryYds: club.p10CarryYds,
+      p90CarryYds: club.p90CarryYds,
+      gapToNextYds,
+      gapStatus,
+      warning
+    });
+  }
+
+  // Add insights based on analysis
+  if (problematicGaps > 0) {
+    insights.push({
+      message: `Found ${problematicGaps} problematic gaps in your club setup.`,
+      severity: problematicGaps > 2 ? 'error' : 'warning'
+    });
+  } else if (rows.length >= 3) {
+    insights.push({
+      message: 'All club gaps look good!',
+      severity: 'info'
+    });
+  }
+
+  return { rows, insights };
+};
 
 const formatValue = (value: number | null, suffix = '') =>
   value === null ? '—' : `${value.toFixed(1)}${suffix}`;
@@ -23,15 +153,6 @@ const formatRange = (low: number | null, high: number | null, suffix = '') => {
 
 const formatList = (values: string[]) => (values.length ? values.join(', ') : '—');
 
-
-const formatGapStatus = (status: GapStatus | null) => {
-  if (!status) return '—';
-  if (status === 'healthy') return 'Healthy';
-  if (status === 'compressed') return 'Compressed';
-  if (status === 'overlap') return 'Overlap';
-  return 'Cliff';
-};
-
 export default function CsvUploader() {
   const [shots, setShots] = useState<ShotRecord[]>([]);
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
@@ -42,19 +163,20 @@ export default function CsvUploader() {
     () => (showOutliers ? shots : shots.filter((shot) => !shot.isOutlier)),
     [showOutliers, shots]
   );
-  const analysisShots = useMemo(() => {
-    // If outlier filtering removes every shot, fall back to all shots so coach/gapping still render.
-    return visibleShots.length > 0 ? visibleShots : shots;
-  }, [shots, visibleShots]);
-  const summary = useMemo(() => summarizeSession(analysisShots), [analysisShots]);
-  // Keep this as a plain derived value (instead of nested memo dependencies)
-  // to avoid any stale-hydration edge cases during hot reloads.
-  // Use a distinct identifier name to avoid any stale runtime references after hot reloads.
-  const gappingLadder = buildGappingLadder(summary);
-  const coachPlan = buildCoachPlan(summary, gappingLadder);
-  const problematicGapCount = gappingLadder.rows.filter(
-    (row) => row.gapStatus === 'overlap' || row.gapStatus === 'cliff'
-  ).length;
+  const summary = useMemo(() => summarizeSession(visibleShots), [visibleShots]);
+  
+  // Build the gapping ladder from the club data in the summary
+  const ladder = useMemo<GappingLadder>(() => 
+    buildGappingLadder(summary.clubs), 
+    [summary.clubs]
+  );
+  
+  // Count of problematic gaps
+  const problematicGapCount = useMemo(() => 
+    ladder.rows.filter(row => row.gapStatus === 'compressed' || 
+                             row.gapStatus === 'overlap' || 
+                             row.gapStatus === 'cliff').length, 
+    [ladder]);
 
   const onFileChange = (file: File) => {
     setError(null);
@@ -159,19 +281,13 @@ export default function CsvUploader() {
             </article>
             <article>
               <h3>Gapping Rows</h3>
-              <p>{gappingLadder.rows.length}</p>
+              <p>{ladder.rows.length}</p>
             </article>
             <article>
               <h3>Gap Alerts</h3>
               <p>{problematicGapCount}</p>
             </article>
           </section>
-
-          {!showOutliers && shots.length > 0 && visibleShots.length === 0 && (
-            <p className="helper-text">
-              All shots were flagged as outliers, so Coach and Gapping are using the full shot set.
-            </p>
-          )}
 
           <label className="toggle-row" htmlFor="showOutliers">
             <input
@@ -183,17 +299,15 @@ export default function CsvUploader() {
             Include outlier shots in summary calculations
           </label>
 
-
-
           <section>
             <h2>Gapping Ladder</h2>
             <p className="helper-text">
               Sprint 2 Part A: median-carry ladder with adjacent gap health warnings (overlap, compressed, cliff).
             </p>
 
-            {gappingLadder.insights.length > 0 && (
+            {ladder.insights.length > 0 && (
               <ul className="insights-list">
-                {gappingLadder.insights.map((insight) => (
+                {ladder.insights.map((insight) => (
                   <li key={insight.message} className={`insight insight-${insight.severity}`}>
                     {insight.message}
                   </li>
@@ -201,7 +315,7 @@ export default function CsvUploader() {
               </ul>
             )}
 
-            {gappingLadder.rows.length === 0 ? (
+            {ladder.rows.length === 0 ? (
               <p className="helper-text">
                 No gapping ladder rows yet. Make sure your CSV includes carry distance and at least one recognized club type.
               </p>
@@ -218,7 +332,7 @@ export default function CsvUploader() {
                 </tr>
               </thead>
               <tbody>
-                {gappingLadder.rows.map((row) => (
+                {ladder.rows.map((row) => (
                   <tr key={row.club}>
                     <td>{row.displayClub}</td>
                     <td>{formatValue(row.medianCarryYds, ' yds')}</td>
@@ -237,28 +351,15 @@ export default function CsvUploader() {
             )}
           </section>
 
-
-
-          {coachPlan && (
-            <section className="coach-card" aria-label="Coach v1">
-              <h2>{coachPlan.title}</h2>
-              <p>{coachPlan.explanation}</p>
-              <p>
-                <strong>Target:</strong> {coachPlan.target}
-              </p>
-              {coachPlan.focusClub && (
-                <p>
-                  <strong>Focus club:</strong> {coachPlan.focusClub}
-                </p>
-              )}
-              <h3>Next session plan</h3>
-              <ul>
-                {coachPlan.actions.map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            </section>
-          )}
+          <label className="toggle-row" htmlFor="showOutliers">
+            <input
+              id="showOutliers"
+              type="checkbox"
+              checked={showOutliers}
+              onChange={(event) => setShowOutliers(event.target.checked)}
+            />
+            Include outlier shots in summary calculations
+          </label>
 
           <section>
             <h2>By Club</h2>
