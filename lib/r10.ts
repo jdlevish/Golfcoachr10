@@ -88,8 +88,12 @@ const keyAliases: Record<
 
 const normalizeHeader = (value: string) =>
   value
+    // Some CSV exports include a UTF-8 BOM or punctuation in header cells.
+    // Strip those so alias mapping remains stable (e.g. "\uFEFFClub Type" -> "club type").
+    .replace(/\uFEFF/g, '')
     .trim()
     .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/[_-]/g, ' ')
     .replace(/\s+/g, ' ');
 
