@@ -55,6 +55,11 @@ export type SessionSummary = {
     modelLabels: string[];
     shots: number;
     avgCarryYds: number | null;
+    medianCarryYds: number | null;
+    p10CarryYds: number | null;
+    p90CarryYds: number | null;
+    carryStdDevYds: number | null;
+    offlineStdDevYds: number | null;
   }[];
 };
 
@@ -145,6 +150,24 @@ const quantile = (values: number[], q: number) => {
     return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
   }
   return sorted[base];
+};
+
+const roundedQuantile = (values: Array<number | null>, q: number) => {
+  const numbers = toNumericArray(values);
+  if (!numbers.length) return null;
+  const result = quantile(numbers, q);
+  return result !== null ? Math.round(result * 10) / 10 : null;
+};
+
+const stdDev = (values: Array<number | null>) => {
+  const numbers = toNumericArray(values);
+  if (numbers.length < 2) return null;
+  
+  const mean = numbers.reduce((sum, val) => sum + val, 0) / numbers.length;
+  const squaredDiffs = numbers.map(val => Math.pow(val - mean, 2));
+  const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / numbers.length;
+  
+  return Math.round(Math.sqrt(variance) * 10) / 10;
 };
 
 const buildExpectedColumns = () =>
