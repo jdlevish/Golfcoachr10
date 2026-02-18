@@ -80,7 +80,7 @@ const keyAliases: Record<
   clubModel: ['brand/model', 'brand model'],
   ballSpeedMph: ['ball speed', 'ball speed (mph)'],
   launchAngleDeg: ['launch angle', 'launch angle (deg)'],
-  carryYds: ['carry', 'carry distance', 'carry (yds)', 'carry (yards)'],
+  carryYds: ['carry', 'carry distance', 'carry (yds)', 'carry (yards)', 'carry distance (yd)', 'carry distance (yds)', 'carry yd', 'carry yds'],
   totalYds: ['total', 'total distance', 'total (yds)', 'total (yards)'],
   sideYds: ['side', 'side distance', 'side (yds)', 'carry deviation distance'],
   spinRpm: ['spin', 'spin rate', 'spin (rpm)']
