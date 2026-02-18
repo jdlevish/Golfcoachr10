@@ -127,3 +127,48 @@ td {
   color: var(--error);
   font-weight: 600;
 }
+
+
+.insights-list {
+  margin: 0.5rem 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.insight-warning {
+  color: #fde68a;
+}
+
+.insight-danger {
+  color: #fca5a5;
+}
+
+.gap-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.gap-healthy {
+  color: #86efac;
+  background: rgba(22, 101, 52, 0.3);
+}
+
+.gap-compressed {
+  color: #fde68a;
+  background: rgba(146, 64, 14, 0.3);
+}
+
+.gap-overlap,
+.gap-cliff {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.35);
+}
+
+.gap-none {
+  color: var(--muted);
+  background: rgba(71, 85, 105, 0.35);
+}
