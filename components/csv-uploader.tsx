@@ -2,15 +2,7 @@
 
 import Papa from 'papaparse';
 import { useMemo, useState } from 'react';
-import {
-  buildGappingLadder,
-  buildImportReport,
-  mapRowsToShots,
-  summarizeSession,
-  type GapStatus,
-  type ImportReport,
-  type ShotRecord
-} from '@/lib/r10';
+import { buildImportReport, mapRowsToShots, summarizeSession, type ImportReport, type ShotRecord } from '@/lib/r10';
 
 const formatValue = (value: number | null, suffix = '') =>
   value === null ? '—' : `${value.toFixed(1)}${suffix}`;
@@ -21,15 +13,6 @@ const formatRange = (low: number | null, high: number | null, suffix = '') => {
 };
 
 const formatList = (values: string[]) => (values.length ? values.join(', ') : '—');
-
-
-const formatGapStatus = (status: GapStatus | null) => {
-  if (!status) return '—';
-  if (status === 'healthy') return 'Healthy';
-  if (status === 'compressed') return 'Compressed';
-  if (status === 'overlap') return 'Overlap';
-  return 'Cliff';
-};
 
 export default function CsvUploader() {
   const [shots, setShots] = useState<ShotRecord[]>([]);
@@ -42,13 +25,6 @@ export default function CsvUploader() {
     [showOutliers, shots]
   );
   const summary = useMemo(() => summarizeSession(visibleShots), [visibleShots]);
-  // Keep this as a plain derived value (instead of nested memo dependencies)
-  // to avoid any stale-hydration edge cases during hot reloads.
-  // Use a distinct identifier name to avoid any stale runtime references after hot reloads.
-  const gappingLadder = buildGappingLadder(summary);
-  const problematicGapCount = gappingLadder.rows.filter(
-    (row) => row.gapStatus === 'overlap' || row.gapStatus === 'cliff'
-  ).length;
 
   const onFileChange = (file: File) => {
     setError(null);
@@ -153,7 +129,7 @@ export default function CsvUploader() {
             </article>
             <article>
               <h3>Gapping Rows</h3>
-              <p>{gappingLadder.rows.length}</p>
+              <p>{ladder.rows.length}</p>
             </article>
             <article>
               <h3>Gap Alerts</h3>
@@ -179,9 +155,9 @@ export default function CsvUploader() {
               Sprint 2 Part A: median-carry ladder with adjacent gap health warnings (overlap, compressed, cliff).
             </p>
 
-            {gappingLadder.insights.length > 0 && (
+            {ladder.insights.length > 0 && (
               <ul className="insights-list">
-                {gappingLadder.insights.map((insight) => (
+                {ladder.insights.map((insight) => (
                   <li key={insight.message} className={`insight insight-${insight.severity}`}>
                     {insight.message}
                   </li>
@@ -189,7 +165,7 @@ export default function CsvUploader() {
               </ul>
             )}
 
-            {gappingLadder.rows.length === 0 ? (
+            {ladder.rows.length === 0 ? (
               <p className="helper-text">
                 No gapping ladder rows yet. Make sure your CSV includes carry distance and at least one recognized club type.
               </p>
@@ -206,7 +182,7 @@ export default function CsvUploader() {
                 </tr>
               </thead>
               <tbody>
-                {gappingLadder.rows.map((row) => (
+                {ladder.rows.map((row) => (
                   <tr key={row.club}>
                     <td>{row.displayClub}</td>
                     <td>{formatValue(row.medianCarryYds, ' yds')}</td>
@@ -224,6 +200,16 @@ export default function CsvUploader() {
             </table>
             )}
           </section>
+
+          <label className="toggle-row" htmlFor="showOutliers">
+            <input
+              id="showOutliers"
+              type="checkbox"
+              checked={showOutliers}
+              onChange={(event) => setShowOutliers(event.target.checked)}
+            />
+            Include outlier shots in summary calculations
+          </label>
 
           <section>
             <h2>By Club</h2>
