@@ -64,6 +64,40 @@ input[type='file'] {
   background: rgba(15, 23, 42, 0.6);
 }
 
+.diagnostics {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.9rem;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.diagnostics h2 {
+  margin-top: 0;
+}
+
+.diagnostics-grid {
+  display: grid;
+  gap: 0.3rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.diagnostics p {
+  margin: 0.2rem 0;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+}
+
+.helper-text {
+  margin: 0.2rem 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
 .summary-grid h3 {
   margin: 0;
   font-size: 0.95rem;
@@ -92,4 +126,66 @@ td {
 .error {
   color: var(--error);
   font-weight: 600;
+}
+
+
+.insights-list {
+  margin: 0.5rem 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.insight-warning {
+  color: #fde68a;
+}
+
+.insight-danger {
+  color: #fca5a5;
+}
+
+.gap-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.gap-healthy {
+  color: #86efac;
+  background: rgba(22, 101, 52, 0.3);
+}
+
+.gap-compressed {
+  color: #fde68a;
+  background: rgba(146, 64, 14, 0.3);
+}
+
+.gap-overlap,
+.gap-cliff {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.35);
+}
+
+.gap-none {
+  color: var(--muted);
+  background: rgba(71, 85, 105, 0.35);
+}
+
+
+.coach-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.9rem;
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.coach-card h2,
+.coach-card h3 {
+  margin: 0 0 0.5rem;
+}
+
+.coach-card p {
+  margin: 0.35rem 0;
 }
