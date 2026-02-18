@@ -64,6 +64,34 @@ input[type='file'] {
   background: rgba(15, 23, 42, 0.6);
 }
 
+.diagnostics {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.9rem;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.diagnostics h2 {
+  margin-top: 0;
+}
+
+.diagnostics-grid {
+  display: grid;
+  gap: 0.3rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.diagnostics p {
+  margin: 0.2rem 0;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+}
+
 .summary-grid h3 {
   margin: 0;
   font-size: 0.95rem;
