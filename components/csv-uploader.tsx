@@ -42,6 +42,107 @@ const buildEmptyLadder = (): GappingLadder => ({
   insights: []
 });
 
+/**
+ * Builds a gapping ladder from club data, analyzing the distance gaps between clubs
+ */
+const buildGappingLadder = (clubs: Array<{
+  name: string;
+  displayName: string;
+  medianCarryYds: number | null;
+  p10CarryYds: number | null;
+  p90CarryYds: number | null;
+}>): GappingLadder => {
+  // Filter out clubs with no median carry data
+  const validClubs = clubs
+    .filter(club => club.medianCarryYds !== null)
+    .sort((a, b) => {
+      // Sort by median carry distance (descending)
+      const aCarry = a.medianCarryYds || 0;
+      const bCarry = b.medianCarryYds || 0;
+      return bCarry - aCarry;
+    });
+
+  if (validClubs.length < 2) {
+    return {
+      rows: validClubs.map(club => ({
+        club: club.name,
+        displayClub: club.displayName,
+        medianCarryYds: club.medianCarryYds,
+        p10CarryYds: club.p10CarryYds,
+        p90CarryYds: club.p90CarryYds,
+        gapToNextYds: null,
+        gapStatus: null,
+        warning: null
+      })),
+      insights: validClubs.length === 0 
+        ? [{ message: 'No clubs with valid carry data found.', severity: 'info' }]
+        : [{ message: 'Need at least two clubs to analyze gapping.', severity: 'info' }]
+    };
+  }
+
+  // Calculate gaps and analyze them
+  const rows: LadderRow[] = [];
+  const insights: LadderInsight[] = [];
+  let problematicGaps = 0;
+
+  for (let i = 0; i < validClubs.length; i++) {
+    const club = validClubs[i];
+    const nextClub = i < validClubs.length - 1 ? validClubs[i + 1] : null;
+    
+    const gapToNextYds = nextClub && club.medianCarryYds && nextClub.medianCarryYds
+      ? club.medianCarryYds - nextClub.medianCarryYds
+      : null;
+    
+    // Determine gap status
+    let gapStatus: GapStatus = null;
+    let warning: string | null = null;
+    
+    if (gapToNextYds !== null && nextClub) {
+      if (gapToNextYds < 0) {
+        gapStatus = 'overlap';
+        warning = `${club.displayName} carries shorter than ${nextClub.displayName}`;
+        problematicGaps++;
+      } else if (gapToNextYds < 8) {
+        gapStatus = 'compressed';
+        warning = `Gap to next club is only ${gapToNextYds.toFixed(1)} yards`;
+        problematicGaps++;
+      } else if (gapToNextYds > 25) {
+        gapStatus = 'cliff';
+        warning = `Large ${gapToNextYds.toFixed(1)} yard gap to next club`;
+        problematicGaps++;
+      } else {
+        gapStatus = 'optimal';
+      }
+    }
+    
+    rows.push({
+      club: club.name,
+      displayClub: club.displayName,
+      medianCarryYds: club.medianCarryYds,
+      p10CarryYds: club.p10CarryYds,
+      p90CarryYds: club.p90CarryYds,
+      gapToNextYds,
+      gapStatus,
+      warning
+    });
+  }
+
+  // Add insights based on analysis
+  if (problematicGaps > 0) {
+    insights.push({
+      message: `Found ${problematicGaps} problematic gaps in your club setup.`,
+      severity: problematicGaps > 2 ? 'error' : 'warning'
+    });
+  } else if (rows.length >= 3) {
+    insights.push({
+      message: 'All club gaps look good!',
+      severity: 'info'
+    });
+  }
+
+  return { rows, insights };
+};
+
 const formatValue = (value: number | null, suffix = '') =>
   value === null ? '—' : `${value.toFixed(1)}${suffix}`;
 
@@ -64,10 +165,13 @@ export default function CsvUploader() {
   );
   const summary = useMemo(() => summarizeSession(visibleShots), [visibleShots]);
   
-  // Create empty ladder for now - in a real implementation this would be populated with actual data
-  const ladder = useMemo<GappingLadder>(() => buildEmptyLadder(), []);
+  // Build the gapping ladder from the club data in the summary
+  const ladder = useMemo<GappingLadder>(() => 
+    buildGappingLadder(summary.clubs), 
+    [summary.clubs]
+  );
   
-  // Count of problematic gaps (would be calculated from ladder data)
+  // Count of problematic gaps
   const problematicGapCount = useMemo(() => 
     ladder.rows.filter(row => row.gapStatus === 'compressed' || 
                              row.gapStatus === 'overlap' || 
