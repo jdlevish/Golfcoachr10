@@ -313,6 +313,51 @@ export const buildImportReport = (rows: Record<string, string>[], shots: ShotRec
   };
 };
 
+/**
+ * Orders clubs in a logical sequence for display:
+ * 1. Driver first
+ * 2. Woods in ascending order (3W, 5W, 7W)
+ * 3. Hybrids in ascending order
+ * 4. Irons in ascending order (2i through 9i)
+ * 5. Wedges in a specific order (PW, GW, SW, LW)
+ * 6. Putter last
+ * 7. Any unknown or unrecognized clubs at the end
+ */
+const compareClubTypeOrder = (a: string, b: string): number => {
+  // Define club categories and their display order
+  const clubOrder: Record<string, number> = {
+    'Driver': 0,
+    '3 Wood': 10,
+    '5 Wood': 11,
+    '7 Wood': 12,
+    '2 Hybrid': 20,
+    '3 Hybrid': 21,
+    '4 Hybrid': 22,
+    '5 Hybrid': 23,
+    '6 Hybrid': 24,
+    '2 Iron': 30,
+    '3 Iron': 31,
+    '4 Iron': 32,
+    '5 Iron': 33,
+    '6 Iron': 34,
+    '7 Iron': 35,
+    '8 Iron': 36,
+    '9 Iron': 37,
+    'PW': 40,
+    'GW': 41,
+    'SW': 42,
+    'LW': 43,
+    'Putter': 50,
+    'Unknown': 100
+  };
+
+  // Get the order value for each club, defaulting to 99 (end) if not found
+  const orderA = clubOrder[a] ?? 99;
+  const orderB = clubOrder[b] ?? 99;
+
+  return orderA - orderB;
+};
+
 export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {
   const grouped = new Map<string, ShotRecord[]>();
 
