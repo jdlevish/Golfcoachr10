@@ -1,11 +1,12 @@
 /**
  * Garmin R10 CSV normalization and session summarization helpers.
  *
- * Sprint 1 (Part A) focus:
+ * Sprint 1 (Part A + B) focus:
  * - resilient column mapping
  * - numeric coercion with locale support
  * - row quality flags and outlier tagging
  * - import diagnostics report for transparency
+ * - per-club robust carry/consistency statistics
  */
 
 export type ShotRecord = {
@@ -124,8 +125,11 @@ const numeric = (value: string | undefined) => {
   return Number.isFinite(n) ? n : null;
 };
 
+const toNumericArray = (values: Array<number | null>) =>
+  values.filter((v): v is number => typeof v === 'number');
+
 const avg = (values: Array<number | null>) => {
-  const numbers = values.filter((v): v is number => typeof v === 'number');
+  const numbers = toNumericArray(values);
   if (!numbers.length) return null;
   const total = numbers.reduce((sum, v) => sum + v, 0);
   return Math.round((total / numbers.length) * 10) / 10;
@@ -309,7 +313,12 @@ export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {
         shotLabels: Array.from(new Set(list.map((shot) => shot.clubName).filter((v): v is string => Boolean(v)))),
         modelLabels: Array.from(new Set(list.map((shot) => shot.clubModel).filter((v): v is string => Boolean(v)))),
         shots: list.length,
-        avgCarryYds: avg(list.map((s) => s.carryYds))
+        avgCarryYds: avg(list.map((s) => s.carryYds)),
+        medianCarryYds: roundedQuantile(list.map((s) => s.carryYds), 0.5),
+        p10CarryYds: roundedQuantile(list.map((s) => s.carryYds), 0.1),
+        p90CarryYds: roundedQuantile(list.map((s) => s.carryYds), 0.9),
+        carryStdDevYds: stdDev(list.map((s) => s.carryYds)),
+        offlineStdDevYds: stdDev(list.map((s) => s.sideYds))
       }))
       .sort((a, b) => b.shots - a.shots)
   };

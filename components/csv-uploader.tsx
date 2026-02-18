@@ -7,6 +7,11 @@ import { buildImportReport, mapRowsToShots, summarizeSession, type ImportReport,
 const formatValue = (value: number | null, suffix = '') =>
   value === null ? '—' : `${value.toFixed(1)}${suffix}`;
 
+const formatRange = (low: number | null, high: number | null, suffix = '') => {
+  if (low === null || high === null) return '—';
+  return `${low.toFixed(1)}${suffix} – ${high.toFixed(1)}${suffix}`;
+};
+
 const formatList = (values: string[]) => (values.length ? values.join(', ') : '—');
 
 export default function CsvUploader() {
@@ -136,11 +141,19 @@ export default function CsvUploader() {
 
           <section>
             <h2>By Club</h2>
+            <p className="helper-text">
+              Sprint 1 Part B metrics: median carry, P10–P90 carry band, carry consistency (std dev), and
+              directional consistency (offline std dev).
+            </p>
             <table>
               <thead>
                 <tr>
                   <th>Club</th>
                   <th>Shots</th>
+                  <th>Median Carry</th>
+                  <th>P10–P90 Carry</th>
+                  <th>Carry Std Dev</th>
+                  <th>Offline Std Dev</th>
                   <th>Avg Carry</th>
                 </tr>
               </thead>
@@ -158,6 +171,10 @@ export default function CsvUploader() {
                       )}
                     </td>
                     <td>{club.shots}</td>
+                    <td>{formatValue(club.medianCarryYds, ' yds')}</td>
+                    <td>{formatRange(club.p10CarryYds, club.p90CarryYds, ' yds')}</td>
+                    <td>{formatValue(club.carryStdDevYds, ' yds')}</td>
+                    <td>{formatValue(club.offlineStdDevYds, ' yds')}</td>
                     <td>{formatValue(club.avgCarryYds, ' yds')}</td>
                   </tr>
                 ))}

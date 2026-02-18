@@ -92,6 +92,12 @@ input[type='file'] {
   color: var(--muted);
 }
 
+.helper-text {
+  margin: 0.2rem 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
 .summary-grid h3 {
   margin: 0;
   font-size: 0.95rem;
