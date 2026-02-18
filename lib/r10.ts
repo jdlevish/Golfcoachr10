@@ -75,7 +75,7 @@ const keyAliases: Record<
   | 'spinRpm',
   string[]
 > = {
-  clubType: ['club type', 'clubtype', 'club'],
+  clubType: ['club type', 'club'],
   clubName: ['club name'],
   clubModel: ['brand/model', 'brand model'],
   ballSpeedMph: ['ball speed', 'ball speed (mph)'],
@@ -144,9 +144,6 @@ const avg = (values: Array<number | null>) => {
   return Math.round((total / numbers.length) * 10) / 10;
 };
 
-/**
- * Linear interpolation quantile.
- */
 const quantile = (values: number[], q: number) => {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -159,22 +156,22 @@ const quantile = (values: number[], q: number) => {
   return sorted[base];
 };
 
+const roundedQuantile = (values: Array<number | null>, q: number) => {
+  const numbers = toNumericArray(values);
+  if (!numbers.length) return null;
+  const result = quantile(numbers, q);
+  return result !== null ? Math.round(result * 10) / 10 : null;
+};
+
 const stdDev = (values: Array<number | null>) => {
   const numbers = toNumericArray(values);
   if (numbers.length < 2) return null;
-
-  const mean = numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
-  const variance =
-    numbers.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
-    (numbers.length - 1);
-
+  
+  const mean = numbers.reduce((sum, val) => sum + val, 0) / numbers.length;
+  const squaredDiffs = numbers.map(val => Math.pow(val - mean, 2));
+  const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / numbers.length;
+  
   return Math.round(Math.sqrt(variance) * 10) / 10;
-};
-
-const roundedQuantile = (values: Array<number | null>, q: number) => {
-  const numbers = toNumericArray(values);
-  const value = quantile(numbers, q);
-  return value === null ? null : Math.round(value * 10) / 10;
 };
 
 const buildExpectedColumns = () =>
@@ -191,48 +188,6 @@ const getDetectedColumns = (rows: Record<string, string>[]) => {
     }
   }
   return known;
-};
-
-
-const wedgeOrder = ['lob wedge', 'sand wedge', 'gap wedge', 'approach wedge', 'pitching wedge', 'wedge'];
-
-const getClubSortKey = (clubType: string) => {
-  const normalized = clubType.trim().toLowerCase();
-
-  const wedgeIndex = wedgeOrder.indexOf(normalized);
-  if (wedgeIndex >= 0) return { group: 0, rank: wedgeIndex, label: normalized };
-
-  const ironMatch = normalized.match(/^(\d+)\s*iron$/);
-  if (ironMatch) {
-    const ironNumber = Number(ironMatch[1]);
-    // Lower rank should render first. 9-iron before 8-iron ... before 4-iron.
-    return { group: 1, rank: 10 - ironNumber, label: normalized };
-  }
-
-  const hybridMatch = normalized.match(/^(\d+)\s*hybrid$/);
-  if (hybridMatch) {
-    return { group: 2, rank: Number(hybridMatch[1]), label: normalized };
-  }
-
-  const woodMatch = normalized.match(/^(\d+)\s*wood$/);
-  if (woodMatch) {
-    return { group: 3, rank: Number(woodMatch[1]), label: normalized };
-  }
-
-  if (normalized === 'driver') {
-    return { group: 4, rank: 0, label: normalized };
-  }
-
-  return { group: 5, rank: 999, label: normalized };
-};
-
-const compareClubTypeOrder = (a: string, b: string) => {
-  const aKey = getClubSortKey(a);
-  const bKey = getClubSortKey(b);
-
-  if (aKey.group !== bKey.group) return aKey.group - bKey.group;
-  if (aKey.rank !== bKey.rank) return aKey.rank - bKey.rank;
-  return aKey.label.localeCompare(bKey.label);
 };
 
 const markCarryOutliers = (shots: ShotRecord[]) => {
@@ -360,6 +315,51 @@ export const buildImportReport = (rows: Record<string, string>[], shots: ShotRec
     clubsDetected,
     warnings
   };
+};
+
+/**
+ * Orders clubs in a logical sequence for display:
+ * 1. Driver first
+ * 2. Woods in ascending order (3W, 5W, 7W)
+ * 3. Hybrids in ascending order
+ * 4. Irons in ascending order (2i through 9i)
+ * 5. Wedges in a specific order (PW, GW, SW, LW)
+ * 6. Putter last
+ * 7. Any unknown or unrecognized clubs at the end
+ */
+const compareClubTypeOrder = (a: string, b: string): number => {
+  // Define club categories and their display order
+  const clubOrder: Record<string, number> = {
+    'Driver': 0,
+    '3 Wood': 10,
+    '5 Wood': 11,
+    '7 Wood': 12,
+    '2 Hybrid': 20,
+    '3 Hybrid': 21,
+    '4 Hybrid': 22,
+    '5 Hybrid': 23,
+    '6 Hybrid': 24,
+    '2 Iron': 30,
+    '3 Iron': 31,
+    '4 Iron': 32,
+    '5 Iron': 33,
+    '6 Iron': 34,
+    '7 Iron': 35,
+    '8 Iron': 36,
+    '9 Iron': 37,
+    'PW': 40,
+    'GW': 41,
+    'SW': 42,
+    'LW': 43,
+    'Putter': 50,
+    'Unknown': 100
+  };
+
+  // Get the order value for each club, defaulting to 99 (end) if not found
+  const orderA = clubOrder[a] ?? 99;
+  const orderB = clubOrder[b] ?? 99;
+
+  return orderA - orderB;
 };
 
 export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {
