@@ -55,11 +55,6 @@ export type SessionSummary = {
     modelLabels: string[];
     shots: number;
     avgCarryYds: number | null;
-    medianCarryYds: number | null;
-    p10CarryYds: number | null;
-    p90CarryYds: number | null;
-    carryStdDevYds: number | null;
-    offlineStdDevYds: number | null;
   }[];
 };
 
@@ -140,9 +135,6 @@ const avg = (values: Array<number | null>) => {
   return Math.round((total / numbers.length) * 10) / 10;
 };
 
-/**
- * Linear interpolation quantile.
- */
 const quantile = (values: number[], q: number) => {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -153,24 +145,6 @@ const quantile = (values: number[], q: number) => {
     return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
   }
   return sorted[base];
-};
-
-const stdDev = (values: Array<number | null>) => {
-  const numbers = toNumericArray(values);
-  if (numbers.length < 2) return null;
-
-  const mean = numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
-  const variance =
-    numbers.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
-    (numbers.length - 1);
-
-  return Math.round(Math.sqrt(variance) * 10) / 10;
-};
-
-const roundedQuantile = (values: Array<number | null>, q: number) => {
-  const numbers = toNumericArray(values);
-  const value = quantile(numbers, q);
-  return value === null ? null : Math.round(value * 10) / 10;
 };
 
 const buildExpectedColumns = () =>
