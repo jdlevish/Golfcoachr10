@@ -2,16 +2,24 @@
 
 import Papa from 'papaparse';
 import { useMemo, useState } from 'react';
-import { mapRowsToShots, summarizeSession, type ShotRecord } from '@/lib/r10';
+import { buildImportReport, mapRowsToShots, summarizeSession, type ImportReport, type ShotRecord } from '@/lib/r10';
 
 const formatValue = (value: number | null, suffix = '') =>
   value === null ? '—' : `${value.toFixed(1)}${suffix}`;
 
+const formatList = (values: string[]) => (values.length ? values.join(', ') : '—');
+
 export default function CsvUploader() {
   const [shots, setShots] = useState<ShotRecord[]>([]);
+  const [importReport, setImportReport] = useState<ImportReport | null>(null);
+  const [showOutliers, setShowOutliers] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const summary = useMemo(() => summarizeSession(shots), [shots]);
+  const visibleShots = useMemo(
+    () => (showOutliers ? shots : shots.filter((shot) => !shot.isOutlier)),
+    [showOutliers, shots]
+  );
+  const summary = useMemo(() => summarizeSession(visibleShots), [visibleShots]);
 
   const onFileChange = (file: File) => {
     setError(null);
@@ -21,6 +29,10 @@ export default function CsvUploader() {
       skipEmptyLines: true,
       complete(results) {
         const nextShots = mapRowsToShots(results.data);
+        const report = buildImportReport(results.data, nextShots);
+
+        setImportReport(report);
+
         if (!nextShots.length) {
           setError('No recognizable shot rows were found in this CSV.');
           setShots([]);
@@ -32,6 +44,7 @@ export default function CsvUploader() {
       error(parseError) {
         setError(parseError.message);
         setShots([]);
+        setImportReport(null);
       }
     });
   };
@@ -49,10 +62,46 @@ export default function CsvUploader() {
           }}
         />
         <strong>Upload Garmin R10 CSV</strong>
-        <span>Choose an exported range session to parse and summarize.</span>
+        <span>Choose an exported range session to parse, validate, and summarize.</span>
       </label>
 
       {error && <p className="error">{error}</p>}
+
+      {importReport && (
+        <section className="diagnostics" aria-label="Import diagnostics">
+          <h2>Import Diagnostics</h2>
+          <div className="diagnostics-grid">
+            <p>
+              <strong>Total rows:</strong> {importReport.totalRows}
+            </p>
+            <p>
+              <strong>Parsed shots:</strong> {importReport.parsedShots}
+            </p>
+            <p>
+              <strong>Dropped rows:</strong> {importReport.droppedRows}
+            </p>
+            <p>
+              <strong>Outlier rows:</strong> {importReport.outlierRows}
+            </p>
+            <p>
+              <strong>Columns detected:</strong> {formatList(importReport.columnsDetected)}
+            </p>
+            <p>
+              <strong>Columns missing:</strong> {formatList(importReport.columnsMissing)}
+            </p>
+            <p>
+              <strong>Clubs detected:</strong> {formatList(importReport.clubsDetected)}
+            </p>
+          </div>
+          {importReport.warnings.length > 0 && (
+            <ul>
+              {importReport.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {shots.length > 0 && (
         <>
@@ -75,6 +124,16 @@ export default function CsvUploader() {
             </article>
           </section>
 
+          <label className="toggle-row" htmlFor="showOutliers">
+            <input
+              id="showOutliers"
+              type="checkbox"
+              checked={showOutliers}
+              onChange={(event) => setShowOutliers(event.target.checked)}
+            />
+            Include outlier shots in summary calculations
+          </label>
+
           <section>
             <h2>By Club</h2>
             <table>
@@ -88,7 +147,16 @@ export default function CsvUploader() {
               <tbody>
                 {summary.clubs.map((club) => (
                   <tr key={club.name}>
-                    <td>{club.name}</td>
+                    <td>
+                      <div>{club.displayName}</div>
+                      {(club.shotLabels.length > 1 || club.modelLabels.length > 0) && (
+                        <small>
+                          {club.shotLabels.length > 1 && `Aliases: ${club.shotLabels.join(', ')}`}
+                          {club.shotLabels.length > 1 && club.modelLabels.length > 0 && ' • '}
+                          {club.modelLabels.length > 0 && `Models: ${club.modelLabels.join(', ')}`}
+                        </small>
+                      )}
+                    </td>
                     <td>{club.shots}</td>
                     <td>{formatValue(club.avgCarryYds, ' yds')}</td>
                   </tr>

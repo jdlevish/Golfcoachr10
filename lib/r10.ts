@@ -1,12 +1,44 @@
+/**
+ * Garmin R10 CSV normalization and session summarization helpers.
+ *
+ * Sprint 1 (Part A) focus:
+ * - resilient column mapping
+ * - numeric coercion with locale support
+ * - row quality flags and outlier tagging
+ * - import diagnostics report for transparency
+ */
+
 export type ShotRecord = {
-  club: string;
+  /** Canonical grouping identity: Garmin-controlled Club Type. */
+  clubType: string;
+  /** Optional user-entered nickname (can be blank/inconsistent). */
+  clubName: string | null;
+  /** Optional brand/model metadata. */
+  clubModel: string | null;
+  /** UI label preferring user nickname when present. */
+  displayClub: string;
   ballSpeedMph: number | null;
   launchAngleDeg: number | null;
   carryYds: number | null;
   totalYds: number | null;
   sideYds: number | null;
   spinRpm: number | null;
+  /** Row-level data quality flags. */
+  isOutlier: boolean;
+  /** Any row issues captured during normalization. */
+  qualityFlags: string[];
   raw: Record<string, string>;
+};
+
+export type ImportReport = {
+  totalRows: number;
+  parsedShots: number;
+  droppedRows: number;
+  outlierRows: number;
+  columnsDetected: string[];
+  columnsMissing: string[];
+  clubsDetected: string[];
+  warnings: string[];
 };
 
 export type SessionSummary = {
@@ -15,16 +47,36 @@ export type SessionSummary = {
   avgBallSpeedMph: number | null;
   avgLaunchAngleDeg: number | null;
   avgSpinRpm: number | null;
-  clubs: { name: string; shots: number; avgCarryYds: number | null }[];
+  clubs: {
+    name: string;
+    displayName: string;
+    shotLabels: string[];
+    modelLabels: string[];
+    shots: number;
+    avgCarryYds: number | null;
+  }[];
 };
 
-const keyAliases: Record<keyof Omit<ShotRecord, 'raw'>, string[]> = {
-  club: ['club', 'club type'],
+const keyAliases: Record<
+  | 'clubType'
+  | 'clubName'
+  | 'clubModel'
+  | 'ballSpeedMph'
+  | 'launchAngleDeg'
+  | 'carryYds'
+  | 'totalYds'
+  | 'sideYds'
+  | 'spinRpm',
+  string[]
+> = {
+  clubType: ['club type', 'club'],
+  clubName: ['club name'],
+  clubModel: ['brand/model', 'brand model'],
   ballSpeedMph: ['ball speed', 'ball speed (mph)'],
   launchAngleDeg: ['launch angle', 'launch angle (deg)'],
   carryYds: ['carry', 'carry distance', 'carry (yds)', 'carry (yards)'],
   totalYds: ['total', 'total distance', 'total (yds)', 'total (yards)'],
-  sideYds: ['side', 'side distance', 'side (yds)'],
+  sideYds: ['side', 'side distance', 'side (yds)', 'carry deviation distance'],
   spinRpm: ['spin', 'spin rate', 'spin (rpm)']
 };
 
@@ -35,9 +87,40 @@ const normalizeHeader = (value: string) =>
     .replace(/[_-]/g, ' ')
     .replace(/\s+/g, ' ');
 
+const findKeyByAliases = (row: Record<string, string>, aliases: string[]) =>
+  Object.keys(row).find((k) => aliases.includes(normalizeHeader(k)));
+
+/**
+ * Parses numeric strings while handling common CSV export formatting:
+ * - empty strings -> null
+ * - decimal commas ("1,23") -> 1.23
+ * - thousands separators ("1,234.5" / "1.234,5")
+ * - strips units/symbols
+ */
 const numeric = (value: string | undefined) => {
   if (!value) return null;
-  const n = Number(value.replace(/[^\d.-]/g, ''));
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  let normalized = trimmed.replace(/\s/g, '');
+  const hasComma = normalized.includes(',');
+  const hasDot = normalized.includes('.');
+
+  if (hasComma && hasDot) {
+    // Choose decimal symbol by whichever appears last.
+    if (normalized.lastIndexOf(',') > normalized.lastIndexOf('.')) {
+      normalized = normalized.replace(/\./g, '').replace(',', '.');
+    } else {
+      normalized = normalized.replace(/,/g, '');
+    }
+  } else if (hasComma) {
+    // If comma is the only separator, treat as decimal comma.
+    normalized = normalized.replace(',', '.');
+  }
+
+  normalized = normalized.replace(/[^\d.-]/g, '');
+  const n = Number(normalized);
   return Number.isFinite(n) ? n : null;
 };
 
@@ -48,48 +131,166 @@ const avg = (values: Array<number | null>) => {
   return Math.round((total / numbers.length) * 10) / 10;
 };
 
-const resolveValue = (
-  row: Record<string, string>,
-  aliases: string[],
-  transform: (v: string | undefined) => string | number | null
-) => {
-  const key = Object.keys(row).find((k) => aliases.includes(normalizeHeader(k)));
-  return transform(key ? row[key] : undefined);
+const quantile = (values: number[], q: number) => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const pos = (sorted.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  if (sorted[base + 1] !== undefined) {
+    return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
+  }
+  return sorted[base];
+};
+
+const buildExpectedColumns = () =>
+  Object.entries(keyAliases).map(([field, aliases]) => ({
+    field,
+    aliases
+  }));
+
+const getDetectedColumns = (rows: Record<string, string>[]) => {
+  const known = new Set<string>();
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      known.add(normalizeHeader(key));
+    }
+  }
+  return known;
+};
+
+const markCarryOutliers = (shots: ShotRecord[]) => {
+  const byClub = new Map<string, ShotRecord[]>();
+
+  for (const shot of shots) {
+    const key = shot.clubType || 'Unknown';
+    const list = byClub.get(key) ?? [];
+    list.push(shot);
+    byClub.set(key, list);
+  }
+
+  for (const clubShots of Array.from(byClub.values())) {
+    const carries = clubShots
+      .map((s: ShotRecord) => s.carryYds)
+      .filter((v: number | null): v is number => typeof v === 'number');
+
+    if (carries.length < 4) continue;
+
+    const q1 = quantile(carries, 0.25);
+    const q3 = quantile(carries, 0.75);
+    if (q1 === null || q3 === null) continue;
+
+    const iqr = q3 - q1;
+    const lower = q1 - 1.5 * iqr;
+    const upper = q3 + 1.5 * iqr;
+
+    for (const shot of clubShots) {
+      if (shot.carryYds === null) continue;
+      if (shot.carryYds < lower || shot.carryYds > upper) {
+        shot.isOutlier = true;
+        shot.qualityFlags.push('carry_outlier');
+      }
+    }
+  }
 };
 
 export const mapRowsToShots = (rows: Record<string, string>[]): ShotRecord[] => {
-  return rows
-    .map((row) => {
-      const shot: ShotRecord = {
-        club: String(resolveValue(row, keyAliases.club, (v) => v?.trim() ?? 'Unknown')),
-        ballSpeedMph: resolveValue(row, keyAliases.ballSpeedMph, numeric) as number | null,
-        launchAngleDeg: resolveValue(row, keyAliases.launchAngleDeg, numeric) as number | null,
-        carryYds: resolveValue(row, keyAliases.carryYds, numeric) as number | null,
-        totalYds: resolveValue(row, keyAliases.totalYds, numeric) as number | null,
-        sideYds: resolveValue(row, keyAliases.sideYds, numeric) as number | null,
-        spinRpm: resolveValue(row, keyAliases.spinRpm, numeric) as number | null,
-        raw: row
-      };
+  const shots: ShotRecord[] = [];
 
-      return shot;
-    })
-    .filter((shot) =>
-      [
-        shot.club !== 'Unknown',
-        shot.ballSpeedMph !== null,
-        shot.launchAngleDeg !== null,
-        shot.carryYds !== null,
-        shot.totalYds !== null,
-        shot.sideYds !== null,
-        shot.spinRpm !== null
-      ].some(Boolean));
+  for (const row of rows) {
+    const clubTypeKey = findKeyByAliases(row, keyAliases.clubType);
+    const clubNameKey = findKeyByAliases(row, keyAliases.clubName);
+    const clubModelKey = findKeyByAliases(row, keyAliases.clubModel);
+
+    const clubType = row[clubTypeKey ?? '']?.trim() || 'Unknown';
+    const clubName = row[clubNameKey ?? '']?.trim() || null;
+    const clubModel = row[clubModelKey ?? '']?.trim() || null;
+
+    const shot: ShotRecord = {
+      clubType,
+      clubName,
+      clubModel,
+      displayClub: clubName ? `${clubType} (${clubName})` : clubType,
+      ballSpeedMph: numeric(row[findKeyByAliases(row, keyAliases.ballSpeedMph) ?? '']),
+      launchAngleDeg: numeric(row[findKeyByAliases(row, keyAliases.launchAngleDeg) ?? '']),
+      carryYds: numeric(row[findKeyByAliases(row, keyAliases.carryYds) ?? '']),
+      totalYds: numeric(row[findKeyByAliases(row, keyAliases.totalYds) ?? '']),
+      sideYds: numeric(row[findKeyByAliases(row, keyAliases.sideYds) ?? '']),
+      spinRpm: numeric(row[findKeyByAliases(row, keyAliases.spinRpm) ?? '']),
+      isOutlier: false,
+      qualityFlags: [],
+      raw: row
+    };
+
+    if (shot.clubType === 'Unknown') {
+      shot.qualityFlags.push('missing_club_type');
+    }
+
+    if (shot.carryYds !== null && shot.carryYds < 0) {
+      shot.qualityFlags.push('invalid_carry_distance');
+    }
+
+    const hasAnyCoreMetric =
+      shot.ballSpeedMph !== null ||
+      shot.launchAngleDeg !== null ||
+      shot.carryYds !== null ||
+      shot.totalYds !== null ||
+      shot.sideYds !== null ||
+      shot.spinRpm !== null;
+
+    // Drop rows that have no reliable identity and no usable metrics.
+    if (shot.clubType === 'Unknown' && !hasAnyCoreMetric) {
+      continue;
+    }
+
+    shots.push(shot);
+  }
+
+  markCarryOutliers(shots);
+  return shots;
+};
+
+export const buildImportReport = (rows: Record<string, string>[], shots: ShotRecord[]): ImportReport => {
+  const detectedColumns = getDetectedColumns(rows);
+  const expectedColumns = buildExpectedColumns();
+
+  const columnsDetected = expectedColumns
+    .filter((entry) => entry.aliases.some((alias) => detectedColumns.has(alias)))
+    .map((entry) => entry.field)
+    .sort();
+
+  const columnsMissing = expectedColumns
+    .filter((entry) => !entry.aliases.some((alias) => detectedColumns.has(alias)))
+    .map((entry) => entry.field)
+    .sort();
+
+  const clubsDetected = Array.from(new Set(shots.map((s) => s.clubType))).sort();
+  const outlierRows = shots.filter((s) => s.isOutlier).length;
+
+  const warnings: string[] = [];
+  if (columnsMissing.includes('clubType')) warnings.push('Missing canonical club type column.');
+  if (columnsMissing.includes('carryYds')) warnings.push('Missing carry distance column.');
+  if (columnsMissing.includes('sideYds')) warnings.push('Missing side/offline distance column for dispersion analysis.');
+  if (shots.length < 10) warnings.push('Low shot count; analytics may be noisy.');
+  if (!clubsDetected.length) warnings.push('No recognizable clubs detected.');
+
+  return {
+    totalRows: rows.length,
+    parsedShots: shots.length,
+    droppedRows: Math.max(0, rows.length - shots.length),
+    outlierRows,
+    columnsDetected,
+    columnsMissing,
+    clubsDetected,
+    warnings
+  };
 };
 
 export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {
   const grouped = new Map<string, ShotRecord[]>();
 
   for (const shot of shots) {
-    const key = shot.club || 'Unknown';
+    const key = shot.clubType || 'Unknown';
     const existing = grouped.get(key) ?? [];
     existing.push(shot);
     grouped.set(key, existing);
@@ -104,6 +305,9 @@ export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {
     clubs: Array.from(grouped.entries())
       .map(([name, list]) => ({
         name,
+        displayName: list.find((shot) => shot.clubName)?.displayClub ?? name,
+        shotLabels: Array.from(new Set(list.map((shot) => shot.clubName).filter((v): v is string => Boolean(v)))),
+        modelLabels: Array.from(new Set(list.map((shot) => shot.clubModel).filter((v): v is string => Boolean(v)))),
         shots: list.length,
         avgCarryYds: avg(list.map((s) => s.carryYds))
       }))
