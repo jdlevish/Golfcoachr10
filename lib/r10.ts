@@ -343,6 +343,6 @@ export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {
         carryStdDevYds: stdDev(list.map((s) => s.carryYds)),
         offlineStdDevYds: stdDev(list.map((s) => s.sideYds))
       }))
-      .sort((a, b) => b.shots - a.shots)
+      .sort((a, b) => compareClubTypeOrder(a.name, b.name))
   };
 };
