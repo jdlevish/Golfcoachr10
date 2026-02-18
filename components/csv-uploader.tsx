@@ -2,15 +2,7 @@
 
 import Papa from 'papaparse';
 import { useMemo, useState } from 'react';
-import {
-  buildGappingLadder,
-  buildImportReport,
-  mapRowsToShots,
-  summarizeSession,
-  type GapStatus,
-  type ImportReport,
-  type ShotRecord
-} from '@/lib/r10';
+import { buildImportReport, mapRowsToShots, summarizeSession, type ImportReport, type ShotRecord } from '@/lib/r10';
 
 const formatValue = (value: number | null, suffix = '') =>
   value === null ? '—' : `${value.toFixed(1)}${suffix}`;
@@ -21,15 +13,6 @@ const formatRange = (low: number | null, high: number | null, suffix = '') => {
 };
 
 const formatList = (values: string[]) => (values.length ? values.join(', ') : '—');
-
-
-const formatGapStatus = (status: GapStatus | null) => {
-  if (!status) return '—';
-  if (status === 'healthy') return 'Healthy';
-  if (status === 'compressed') return 'Compressed';
-  if (status === 'overlap') return 'Overlap';
-  return 'Cliff';
-};
 
 export default function CsvUploader() {
   const [shots, setShots] = useState<ShotRecord[]>([]);
@@ -42,7 +25,6 @@ export default function CsvUploader() {
     [showOutliers, shots]
   );
   const summary = useMemo(() => summarizeSession(visibleShots), [visibleShots]);
-  const ladder = useMemo(() => buildGappingLadder(summary), [summary]);
 
   const onFileChange = (file: File) => {
     setError(null);
@@ -156,54 +138,6 @@ export default function CsvUploader() {
             />
             Include outlier shots in summary calculations
           </label>
-
-
-
-          <section>
-            <h2>Gapping Ladder</h2>
-            <p className="helper-text">
-              Sprint 2 Part A: median-carry ladder with adjacent gap health warnings (overlap, compressed, cliff).
-            </p>
-
-            {ladder.insights.length > 0 && (
-              <ul className="insights-list">
-                {ladder.insights.map((insight) => (
-                  <li key={insight.message} className={`insight insight-${insight.severity}`}>
-                    {insight.message}
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <table>
-              <thead>
-                <tr>
-                  <th>Club</th>
-                  <th>Median Carry</th>
-                  <th>P10–P90 Carry</th>
-                  <th>Gap To Next</th>
-                  <th>Status</th>
-                  <th>Warning</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ladder.rows.map((row) => (
-                  <tr key={row.club}>
-                    <td>{row.displayClub}</td>
-                    <td>{formatValue(row.medianCarryYds, ' yds')}</td>
-                    <td>{formatRange(row.p10CarryYds, row.p90CarryYds, ' yds')}</td>
-                    <td>{formatValue(row.gapToNextYds, ' yds')}</td>
-                    <td>
-                      <span className={`gap-badge ${row.gapStatus ? `gap-${row.gapStatus}` : 'gap-none'}`}>
-                        {formatGapStatus(row.gapStatus)}
-                      </span>
-                    </td>
-                    <td>{row.warning ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
 
           <section>
             <h2>By Club</h2>
