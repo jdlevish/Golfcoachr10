@@ -2,15 +2,7 @@
 
 import Papa from 'papaparse';
 import { useMemo, useState } from 'react';
-import {
-  buildGappingLadder,
-  buildImportReport,
-  mapRowsToShots,
-  summarizeSession,
-  type GapStatus,
-  type ImportReport,
-  type ShotRecord
-} from '@/lib/r10';
+import { buildImportReport, mapRowsToShots, summarizeSession, type ImportReport, type ShotRecord } from '@/lib/r10';
 
 const formatValue = (value: number | null, suffix = '') =>
   value === null ? '—' : `${value.toFixed(1)}${suffix}`;
@@ -21,15 +13,6 @@ const formatRange = (low: number | null, high: number | null, suffix = '') => {
 };
 
 const formatList = (values: string[]) => (values.length ? values.join(', ') : '—');
-
-
-const formatGapStatus = (status: GapStatus | null) => {
-  if (!status) return '—';
-  if (status === 'healthy') return 'Healthy';
-  if (status === 'compressed') return 'Compressed';
-  if (status === 'overlap') return 'Overlap';
-  return 'Cliff';
-};
 
 export default function CsvUploader() {
   const [shots, setShots] = useState<ShotRecord[]>([]);
@@ -42,11 +25,6 @@ export default function CsvUploader() {
     [showOutliers, shots]
   );
   const summary = useMemo(() => summarizeSession(visibleShots), [visibleShots]);
-  const ladder = useMemo(() => buildGappingLadder(summary), [summary]);
-  const problematicGapCount = useMemo(
-    () => ladder.rows.filter((row) => row.gapStatus === 'overlap' || row.gapStatus === 'cliff').length,
-    [ladder.rows]
-  );
 
   const onFileChange = (file: File) => {
     setError(null);
@@ -222,6 +200,16 @@ export default function CsvUploader() {
             </table>
             )}
           </section>
+
+          <label className="toggle-row" htmlFor="showOutliers">
+            <input
+              id="showOutliers"
+              type="checkbox"
+              checked={showOutliers}
+              onChange={(event) => setShowOutliers(event.target.checked)}
+            />
+            Include outlier shots in summary calculations
+          </label>
 
           <section>
             <h2>By Club</h2>
