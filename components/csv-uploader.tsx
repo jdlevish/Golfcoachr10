@@ -4,6 +4,44 @@ import Papa from 'papaparse';
 import { useMemo, useState } from 'react';
 import { buildImportReport, mapRowsToShots, summarizeSession, type ImportReport, type ShotRecord } from '@/lib/r10';
 
+type GapStatus = 'optimal' | 'compressed' | 'overlap' | 'cliff' | null;
+
+type LadderRow = {
+  club: string;
+  displayClub: string;
+  medianCarryYds: number | null;
+  p10CarryYds: number | null;
+  p90CarryYds: number | null;
+  gapToNextYds: number | null;
+  gapStatus: GapStatus;
+  warning: string | null;
+};
+
+type LadderInsight = {
+  message: string;
+  severity: 'info' | 'warning' | 'error';
+};
+
+type GappingLadder = {
+  rows: LadderRow[];
+  insights: LadderInsight[];
+};
+
+const formatGapStatus = (status: GapStatus): string => {
+  switch (status) {
+    case 'optimal': return 'Optimal';
+    case 'compressed': return 'Compressed';
+    case 'overlap': return 'Overlap';
+    case 'cliff': return 'Cliff';
+    default: return '—';
+  }
+};
+
+const buildEmptyLadder = (): GappingLadder => ({
+  rows: [],
+  insights: []
+});
+
 const formatValue = (value: number | null, suffix = '') =>
   value === null ? '—' : `${value.toFixed(1)}${suffix}`;
 
@@ -25,6 +63,16 @@ export default function CsvUploader() {
     [showOutliers, shots]
   );
   const summary = useMemo(() => summarizeSession(visibleShots), [visibleShots]);
+  
+  // Create empty ladder for now - in a real implementation this would be populated with actual data
+  const ladder = useMemo<GappingLadder>(() => buildEmptyLadder(), []);
+  
+  // Count of problematic gaps (would be calculated from ladder data)
+  const problematicGapCount = useMemo(() => 
+    ladder.rows.filter(row => row.gapStatus === 'compressed' || 
+                             row.gapStatus === 'overlap' || 
+                             row.gapStatus === 'cliff').length, 
+    [ladder]);
 
   const onFileChange = (file: File) => {
     setError(null);
@@ -146,8 +194,6 @@ export default function CsvUploader() {
             />
             Include outlier shots in summary calculations
           </label>
-
-
 
           <section>
             <h2>Gapping Ladder</h2>
