@@ -88,7 +88,16 @@ export default function CsvUploader() {
               <tbody>
                 {summary.clubs.map((club) => (
                   <tr key={club.name}>
-                    <td>{club.name}</td>
+                    <td>
+                      <div>{club.displayName}</div>
+                      {(club.shotLabels.length > 1 || club.modelLabels.length > 0) && (
+                        <small>
+                          {club.shotLabels.length > 1 && `Aliases: ${club.shotLabels.join(', ')}`}
+                          {club.shotLabels.length > 1 && club.modelLabels.length > 0 && ' • '}
+                          {club.modelLabels.length > 0 && `Models: ${club.modelLabels.join(', ')}`}
+                        </small>
+                      )}
+                    </td>
                     <td>{club.shots}</td>
                     <td>{formatValue(club.avgCarryYds, ' yds')}</td>
                   </tr>

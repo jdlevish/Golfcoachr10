@@ -1,5 +1,8 @@
 export type ShotRecord = {
-  club: string;
+  clubType: string;
+  clubName: string | null;
+  clubModel: string | null;
+  displayClub: string;
   ballSpeedMph: number | null;
   launchAngleDeg: number | null;
   carryYds: number | null;
@@ -15,11 +18,21 @@ export type SessionSummary = {
   avgBallSpeedMph: number | null;
   avgLaunchAngleDeg: number | null;
   avgSpinRpm: number | null;
-  clubs: { name: string; shots: number; avgCarryYds: number | null }[];
+  clubs: {
+    name: string;
+    displayName: string;
+    shotLabels: string[];
+    modelLabels: string[];
+    shots: number;
+    avgCarryYds: number | null;
+  }[];
 };
 
 const keyAliases: Record<keyof Omit<ShotRecord, 'raw'>, string[]> = {
-  club: ['club', 'club type'],
+  clubType: ['club type', 'club'],
+  clubName: ['club name'],
+  clubModel: ['brand/model', 'brand model'],
+  displayClub: [],
   ballSpeedMph: ['ball speed', 'ball speed (mph)'],
   launchAngleDeg: ['launch angle', 'launch angle (deg)'],
   carryYds: ['carry', 'carry distance', 'carry (yds)', 'carry (yards)'],
@@ -60,8 +73,15 @@ const resolveValue = (
 export const mapRowsToShots = (rows: Record<string, string>[]): ShotRecord[] => {
   return rows
     .map((row) => {
+      const clubType = String(resolveValue(row, keyAliases.clubType, (v) => v?.trim() ?? 'Unknown'));
+      const clubName = resolveValue(row, keyAliases.clubName, (v) => v?.trim() || null) as string | null;
+      const clubModel = resolveValue(row, keyAliases.clubModel, (v) => v?.trim() || null) as string | null;
+
       const shot: ShotRecord = {
-        club: String(resolveValue(row, keyAliases.club, (v) => v?.trim() ?? 'Unknown')),
+        clubType,
+        clubName,
+        clubModel,
+        displayClub: clubName ? `${clubType} (${clubName})` : clubType,
         ballSpeedMph: resolveValue(row, keyAliases.ballSpeedMph, numeric) as number | null,
         launchAngleDeg: resolveValue(row, keyAliases.launchAngleDeg, numeric) as number | null,
         carryYds: resolveValue(row, keyAliases.carryYds, numeric) as number | null,
@@ -75,7 +95,7 @@ export const mapRowsToShots = (rows: Record<string, string>[]): ShotRecord[] => 
     })
     .filter((shot) =>
       [
-        shot.club !== 'Unknown',
+        shot.clubType !== 'Unknown',
         shot.ballSpeedMph !== null,
         shot.launchAngleDeg !== null,
         shot.carryYds !== null,
@@ -89,7 +109,7 @@ export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {
   const grouped = new Map<string, ShotRecord[]>();
 
   for (const shot of shots) {
-    const key = shot.club || 'Unknown';
+    const key = shot.clubType || 'Unknown';
     const existing = grouped.get(key) ?? [];
     existing.push(shot);
     grouped.set(key, existing);
@@ -104,6 +124,9 @@ export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {
     clubs: Array.from(grouped.entries())
       .map(([name, list]) => ({
         name,
+        displayName: list.find((shot) => shot.clubName)?.displayClub ?? name,
+        shotLabels: Array.from(new Set(list.map((shot) => shot.clubName).filter((v): v is string => Boolean(v)))),
+        modelLabels: Array.from(new Set(list.map((shot) => shot.clubModel).filter((v): v is string => Boolean(v)))),
         shots: list.length,
         avgCarryYds: avg(list.map((s) => s.carryYds))
       }))
