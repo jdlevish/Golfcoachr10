@@ -12,6 +12,7 @@ import {
   type ImportReport,
   type ShotRecord
 } from '@/lib/r10';
+import { toStoredShots } from '@/lib/session-storage';
 
 const formatValue = (value: number | null, suffix = '') =>
   value === null ? '—' : `${value.toFixed(1)}${suffix}`;
@@ -32,11 +33,18 @@ const formatGapStatus = (status: GapStatus | null) => {
   return 'Cliff';
 };
 
-export default function CsvUploader() {
+type CsvUploaderProps = {
+  onSessionSaved?: () => void;
+};
+
+export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
   const [shots, setShots] = useState<ShotRecord[]>([]);
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
   const [showOutliers, setShowOutliers] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sourceFileName, setSourceFileName] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [savingSession, setSavingSession] = useState(false);
 
   const visibleShots = useMemo(
     () => (showOutliers ? shots : shots.filter((shot) => !shot.isOutlier)),
@@ -58,6 +66,8 @@ export default function CsvUploader() {
 
   const onFileChange = (file: File) => {
     setError(null);
+    setSaveStatus(null);
+    setSourceFileName(file.name);
 
     Papa.parse<Record<string, string>>(file, {
       header: true,
@@ -80,8 +90,35 @@ export default function CsvUploader() {
         setError(parseError.message);
         setShots([]);
         setImportReport(null);
+        setSourceFileName(null);
       }
     });
+  };
+
+  const saveSession = async () => {
+    if (!shots.length) return;
+    setSavingSession(true);
+    setSaveStatus(null);
+
+    const response = await fetch('/api/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceFile: sourceFileName ?? 'manual-upload',
+        shots: toStoredShots(shots)
+      })
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      setSaveStatus(payload?.error ?? 'Could not save session.');
+      setSavingSession(false);
+      return;
+    }
+
+    setSaveStatus('Session saved.');
+    setSavingSession(false);
+    onSessionSaved?.();
   };
 
   return (
@@ -182,6 +219,13 @@ export default function CsvUploader() {
             />
             Include outlier shots in summary calculations
           </label>
+
+          <div className="persist-actions">
+            <button type="button" onClick={saveSession} disabled={savingSession}>
+              {savingSession ? 'Saving session...' : 'Save session to history'}
+            </button>
+            {saveStatus && <p className="helper-text">{saveStatus}</p>}
+          </div>
 
 
 
