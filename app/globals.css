@@ -234,3 +234,9 @@ td {
   align-items: center;
   justify-content: space-between;
 }
+
+.persist-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}

@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { auth, signOut } from '@/auth';
-import CsvUploader from '@/components/csv-uploader';
+import DashboardShell from '@/components/dashboard-shell';
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -29,7 +29,7 @@ export default async function DashboardPage() {
         <Link href="/">Back home</Link>
       </div>
 
-      <CsvUploader />
+      <DashboardShell />
     </main>
   );
 }
