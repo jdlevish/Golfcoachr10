@@ -172,8 +172,6 @@ td {
   color: var(--muted);
   background: rgba(71, 85, 105, 0.35);
 }
-<<<<<<< ours
-=======
 
 
 .coach-card {
@@ -191,4 +189,48 @@ td {
 .coach-card p {
   margin: 0.35rem 0;
 }
->>>>>>> theirs
+
+.auth-panel,
+.auth-form,
+.dashboard-actions {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.9rem;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.auth-form {
+  display: grid;
+  gap: 0.8rem;
+  max-width: 420px;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.auth-form input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 0.65rem;
+  background: rgba(15, 23, 42, 0.45);
+  color: var(--text);
+}
+
+.auth-form button,
+.dashboard-actions button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 0.8rem;
+  background: rgba(59, 130, 246, 0.18);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dashboard-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}

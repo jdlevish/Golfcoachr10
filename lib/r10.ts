@@ -61,10 +61,6 @@ export type SessionSummary = {
     carryStdDevYds: number | null;
     offlineStdDevYds: number | null;
   }[];
-<<<<<<< ours
-};
-
-=======
 };
 
 
@@ -105,7 +101,6 @@ export type CoachPlan = {
   actions: string[];
 };
 
->>>>>>> theirs
 const keyAliases: Record<
   | 'clubType'
   | 'clubName'
@@ -118,11 +113,7 @@ const keyAliases: Record<
   | 'spinRpm',
   string[]
 > = {
-<<<<<<< ours
-  clubType: ['club type', 'club'],
-=======
   clubType: ['club type', 'clubtype', 'club', 'club category'],
->>>>>>> theirs
   clubName: ['club name'],
   clubModel: ['brand/model', 'brand model'],
   ballSpeedMph: ['ball speed', 'ball speed (mph)'],
@@ -144,15 +135,10 @@ const normalizeHeader = (value: string) =>
     .replace(/[_-]/g, ' ')
     .replace(/\s+/g, ' ');
 
-<<<<<<< ours
-const findKeyByAliases = (row: Record<string, string>, aliases: string[]) =>
-  Object.keys(row).find((k) => aliases.includes(normalizeHeader(k)));
-=======
 const findKeyByAliases = (row: Record<string, string>, aliases: string[]) => {
   const normalizedAliases = new Set(aliases.map((alias) => normalizeHeader(alias)));
   return Object.keys(row).find((k) => normalizedAliases.has(normalizeHeader(k)));
 };
->>>>>>> theirs
 
 /**
  * Parses numeric strings while handling common CSV export formatting:
@@ -198,12 +184,9 @@ const avg = (values: Array<number | null>) => {
   return Math.round((total / numbers.length) * 10) / 10;
 };
 
-<<<<<<< ours
-=======
 /**
  * Linear interpolation quantile.
  */
->>>>>>> theirs
 const quantile = (values: number[], q: number) => {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -216,30 +199,6 @@ const quantile = (values: number[], q: number) => {
   return sorted[base];
 };
 
-<<<<<<< ours
-const roundedQuantile = (values: Array<number | null>, q: number) => {
-  const numbers = toNumericArray(values);
-  if (!numbers.length) return null;
-  const result = quantile(numbers, q);
-  return result !== null ? Math.round(result * 10) / 10 : null;
-};
-
-const stdDev = (values: Array<number | null>) => {
-  const numbers = toNumericArray(values);
-  if (numbers.length < 2) return null;
-  
-  const mean = numbers.reduce((sum, val) => sum + val, 0) / numbers.length;
-  const squaredDiffs = numbers.map(val => Math.pow(val - mean, 2));
-  const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / numbers.length;
-  
-  return Math.round(Math.sqrt(variance) * 10) / 10;
-};
-
-const buildExpectedColumns = () =>
-  Object.entries(keyAliases).map(([field, aliases]) => ({
-    field,
-    aliases
-=======
 const stdDev = (values: Array<number | null>) => {
   const numbers = toNumericArray(values);
   if (numbers.length < 2) return null;
@@ -262,7 +221,6 @@ const buildExpectedColumns = () =>
   Object.entries(keyAliases).map(([field, aliases]) => ({
     field,
     aliases: aliases.map((alias) => normalizeHeader(alias))
->>>>>>> theirs
   }));
 
 const getDetectedColumns = (rows: Record<string, string>[]) => {
@@ -275,8 +233,6 @@ const getDetectedColumns = (rows: Record<string, string>[]) => {
   return known;
 };
 
-<<<<<<< ours
-=======
 
 const wedgeOrder = ['lob wedge', 'sand wedge', 'gap wedge', 'approach wedge', 'pitching wedge', 'wedge'];
 
@@ -540,7 +496,6 @@ export const buildCoachPlan = (summary: SessionSummary, ladder: GappingLadder): 
   };
 };
 
->>>>>>> theirs
 const markCarryOutliers = (shots: ShotRecord[]) => {
   const byClub = new Map<string, ShotRecord[]>();
 
@@ -584,12 +539,6 @@ export const mapRowsToShots = (rows: Record<string, string>[]): ShotRecord[] => 
     const clubNameKey = findKeyByAliases(row, keyAliases.clubName);
     const clubModelKey = findKeyByAliases(row, keyAliases.clubModel);
 
-<<<<<<< ours
-    const clubType = row[clubTypeKey ?? '']?.trim() || 'Unknown';
-    const clubName = row[clubNameKey ?? '']?.trim() || null;
-    const clubModel = row[clubModelKey ?? '']?.trim() || null;
-
-=======
     const parsedClubType = row[clubTypeKey ?? '']?.trim() || 'Unknown';
     const clubName = row[clubNameKey ?? '']?.trim() || null;
     const clubModel = row[clubModelKey ?? '']?.trim() || null;
@@ -597,7 +546,6 @@ export const mapRowsToShots = (rows: Record<string, string>[]): ShotRecord[] => 
     // Fallback to club name when club type is unexpectedly missing in an export.
     const clubType = parsedClubType !== 'Unknown' ? parsedClubType : clubName ?? 'Unknown';
 
->>>>>>> theirs
     const shot: ShotRecord = {
       clubType,
       clubName,
@@ -676,54 +624,6 @@ export const buildImportReport = (rows: Record<string, string>[], shots: ShotRec
     clubsDetected,
     warnings
   };
-<<<<<<< ours
-};
-
-/**
- * Orders clubs in a logical sequence for display:
- * 1. Driver first
- * 2. Woods in ascending order (3W, 5W, 7W)
- * 3. Hybrids in ascending order
- * 4. Irons in ascending order (2i through 9i)
- * 5. Wedges in a specific order (PW, GW, SW, LW)
- * 6. Putter last
- * 7. Any unknown or unrecognized clubs at the end
- */
-const compareClubTypeOrder = (a: string, b: string): number => {
-  // Define club categories and their display order
-  const clubOrder: Record<string, number> = {
-    'Driver': 0,
-    '3 Wood': 10,
-    '5 Wood': 11,
-    '7 Wood': 12,
-    '2 Hybrid': 20,
-    '3 Hybrid': 21,
-    '4 Hybrid': 22,
-    '5 Hybrid': 23,
-    '6 Hybrid': 24,
-    '2 Iron': 30,
-    '3 Iron': 31,
-    '4 Iron': 32,
-    '5 Iron': 33,
-    '6 Iron': 34,
-    '7 Iron': 35,
-    '8 Iron': 36,
-    '9 Iron': 37,
-    'PW': 40,
-    'GW': 41,
-    'SW': 42,
-    'LW': 43,
-    'Putter': 50,
-    'Unknown': 100
-  };
-
-  // Get the order value for each club, defaulting to 99 (end) if not found
-  const orderA = clubOrder[a] ?? 99;
-  const orderB = clubOrder[b] ?? 99;
-
-  return orderA - orderB;
-=======
->>>>>>> theirs
 };
 
 export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {

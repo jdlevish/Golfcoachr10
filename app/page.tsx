@@ -1,18 +1,35 @@
-import CsvUploader from '@/components/csv-uploader';
+import Link from 'next/link';
+import { auth } from '@/auth';
 
-export default function HomePage() {
+export default async function HomePage() {
+  const session = await auth();
+
   return (
     <main className="page">
       <header>
         <p className="eyebrow">Golfcoachr10</p>
-        <h1>Garmin R10 Range Session Importer</h1>
+        <h1>Garmin R10 Range Session Coach</h1>
         <p>
-          This starter app lets you upload exported CSV files from Garmin R10 sessions and see quick
-          summaries by shot and club.
+          Upload Garmin R10 sessions, analyze gapping/consistency, and save progress with account-based
+          access.
         </p>
       </header>
 
-      <CsvUploader />
+      {session?.user ? (
+        <section className="auth-panel">
+          <p>You are signed in as {session.user.email}.</p>
+          <p>
+            <Link href="/dashboard">Open dashboard</Link>
+          </p>
+        </section>
+      ) : (
+        <section className="auth-panel">
+          <p>Create an account to start storing your sessions.</p>
+          <p>
+            <Link href="/sign-up">Create account</Link> | <Link href="/sign-in">Sign in</Link>
+          </p>
+        </section>
+      )}
     </main>
   );
 }
