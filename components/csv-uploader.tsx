@@ -2,6 +2,8 @@
 
 import Papa from 'papaparse';
 import { useMemo, useState } from 'react';
+import { buildRuleInsights } from '@/lib/analysis';
+import { buildCoachV2Plan } from '@/lib/coach-v2';
 import {
   buildCoachPlan,
   buildGappingLadder,
@@ -59,7 +61,9 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
   // to avoid any stale-hydration edge cases during hot reloads.
   // Use a distinct identifier name to avoid any stale runtime references after hot reloads.
   const gappingLadder = buildGappingLadder(summary);
+  const coachV2Plan = buildCoachV2Plan(summary, gappingLadder, { sessionsAnalyzed: 1 });
   const coachPlan = buildCoachPlan(summary, gappingLadder);
+  const ruleInsights = buildRuleInsights(analysisShots, summary, gappingLadder);
   const problematicGapCount = gappingLadder.rows.filter(
     (row) => row.gapStatus === 'overlap' || row.gapStatus === 'cliff'
   ).length;
@@ -283,9 +287,52 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
 
 
 
-          {/* Coach v1 card is always rendered so users can always see guidance or diagnostics. */}
-          <section className="coach-card" aria-label="Coach v1">
-            {coachPlan ? (
+          {/* Coach card is always rendered so users can always see guidance or diagnostics. */}
+          <section className="coach-card" aria-label="Coach guidance">
+            {coachV2Plan ? (
+              <>
+                <h2>Coach v2: {coachV2Plan.primaryConstraint.label}</h2>
+                <p>{coachV2Plan.trendSummary}</p>
+                <p>{coachV2Plan.primaryConstraint.reasons[0]}</p>
+                <p>
+                  <strong>Target:</strong> {coachV2Plan.practicePlan.goal}
+                </p>
+                <p>
+                  <strong>Confidence:</strong> {coachV2Plan.confidence.level} ({coachV2Plan.confidence.score}/100)
+                </p>
+                {coachV2Plan.primaryConstraint.focusClub && (
+                  <p>
+                    <strong>Focus club:</strong> {coachV2Plan.primaryConstraint.focusClub}
+                  </p>
+                )}
+                {coachV2Plan.secondaryConstraint && (
+                  <p>
+                    <strong>Secondary limiter:</strong> {coachV2Plan.secondaryConstraint.label}
+                  </p>
+                )}
+                <h3>Next session plan ({coachV2Plan.practicePlan.durationMinutes} min)</h3>
+                <ul>
+                  {coachV2Plan.practicePlan.steps.map((step) => (
+                    <li key={step.title}>
+                      {step.title}: {step.objective} ({step.reps})
+                    </li>
+                  ))}
+                </ul>
+                {ruleInsights.length > 0 && (
+                  <>
+                    <h3>If-Then Insights</h3>
+                    <ul>
+                      {ruleInsights.map((insight) => (
+                        <li key={insight.id}>
+                          <strong>{insight.title}:</strong> {insight.ifThen} Evidence: {insight.evidence} Action:{' '}
+                          {insight.action}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </>
+            ) : coachPlan ? (
               <>
                 <h2>{coachPlan.title}</h2>
                 <p>{coachPlan.explanation}</p>

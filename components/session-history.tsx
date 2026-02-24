@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import type { CoachPlan, GappingLadder, SessionSummary } from '@/lib/r10';
+import type { RuleInsight, TrendDeltas } from '@/types/analysis';
+import type { CoachV2Plan } from '@/types/coach';
 
 type SessionListItem = {
   id: string;
@@ -20,6 +22,9 @@ type SessionDetail = {
   summary: SessionSummary;
   gappingLadder: GappingLadder;
   coachPlan: CoachPlan | null;
+  coachV2Plan: CoachV2Plan | null;
+  trendDeltas: TrendDeltas | null;
+  ruleInsights: RuleInsight[];
 };
 
 type AllTimePayload = {
@@ -27,6 +32,9 @@ type AllTimePayload = {
   summary: SessionSummary;
   gappingLadder: GappingLadder;
   coachPlan: CoachPlan | null;
+  coachV2Plan: CoachV2Plan | null;
+  trendDeltas: TrendDeltas | null;
+  ruleInsights: RuleInsight[];
 };
 
 type SessionHistoryProps = {
@@ -47,6 +55,11 @@ const formatGapStatus = (status: GappingLadder['rows'][number]['gapStatus']) => 
   return 'Cliff';
 };
 const formatDateTime = (value: string) => new Date(value).toLocaleString();
+const formatTrendDelta = (delta: number | null, unit: string) => {
+  if (delta === null) return '-';
+  const sign = delta > 0 ? '+' : '';
+  return `${sign}${delta.toFixed(1)} ${unit}`;
+};
 
 export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
@@ -210,10 +223,51 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
             </table>
           )}
 
-          {allTime.coachPlan && (
+          {allTime.coachV2Plan && (
             <p>
-              <strong>Current primary limiter:</strong> {allTime.coachPlan.title}
+              <strong>Current primary limiter:</strong> {allTime.coachV2Plan.primaryConstraint.label} (confidence{' '}
+              {allTime.coachV2Plan.confidence.level}, {allTime.coachV2Plan.confidence.score}/100)
             </p>
+          )}
+          {allTime.trendDeltas && (
+            <>
+              <h3>Trend Deltas</h3>
+              <p>{allTime.trendDeltas.summary}</p>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Metric</th>
+                    <th>Current</th>
+                    <th>Baseline</th>
+                    <th>Delta</th>
+                    <th>Direction</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allTime.trendDeltas.metrics.map((metric) => (
+                    <tr key={metric.key}>
+                      <td>{metric.label}</td>
+                      <td>{formatNumber(metric.current, ` ${metric.unit}`)}</td>
+                      <td>{formatNumber(metric.baseline, ` ${metric.unit}`)}</td>
+                      <td>{formatTrendDelta(metric.delta, metric.unit)}</td>
+                      <td>{metric.direction}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+          {allTime.ruleInsights.length > 0 && (
+            <>
+              <h3>If-Then Insights</h3>
+              <ul className="insights-list">
+                {allTime.ruleInsights.map((insight) => (
+                  <li key={insight.id} className={`insight insight-${insight.severity}`}>
+                    <strong>{insight.title}:</strong> {insight.ifThen} Evidence: {insight.evidence} Action: {insight.action}
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </section>
       )}
@@ -266,10 +320,53 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
             Clubs tracked: {selectedSession.summary.clubs.length} | Gap alerts:{' '}
             {selectedSession.gappingLadder.rows.filter((row) => row.gapStatus === 'overlap' || row.gapStatus === 'cliff').length}
           </p>
-          {selectedSession.coachPlan && (
-            <p>
-              <strong>Coach focus:</strong> {selectedSession.coachPlan.title}
-            </p>
+          {selectedSession.coachV2Plan && (
+            <>
+              <p>
+                <strong>Coach focus:</strong> {selectedSession.coachV2Plan.primaryConstraint.label}
+              </p>
+              <p>
+                <strong>Target:</strong> {selectedSession.coachV2Plan.practicePlan.goal}
+              </p>
+            </>
+          )}
+          {selectedSession.trendDeltas && (
+            <>
+              <p>
+                <strong>Trend:</strong> {selectedSession.trendDeltas.summary}
+              </p>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Metric</th>
+                    <th>Current</th>
+                    <th>Baseline</th>
+                    <th>Delta</th>
+                    <th>Direction</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedSession.trendDeltas.metrics.map((metric) => (
+                    <tr key={metric.key}>
+                      <td>{metric.label}</td>
+                      <td>{formatNumber(metric.current, ` ${metric.unit}`)}</td>
+                      <td>{formatNumber(metric.baseline, ` ${metric.unit}`)}</td>
+                      <td>{formatTrendDelta(metric.delta, metric.unit)}</td>
+                      <td>{metric.direction}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+          {selectedSession.ruleInsights.length > 0 && (
+            <ul className="insights-list">
+              {selectedSession.ruleInsights.map((insight) => (
+                <li key={insight.id} className={`insight insight-${insight.severity}`}>
+                  <strong>{insight.title}:</strong> {insight.ifThen} Evidence: {insight.evidence} Action: {insight.action}
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       )}
