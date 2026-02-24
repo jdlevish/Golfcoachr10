@@ -3,7 +3,7 @@ import { auth } from '@/auth';
 import { buildRuleInsights, buildTrendDeltas } from '@/lib/analysis';
 import { buildCoachV2Plan } from '@/lib/coach-v2';
 import { prisma } from '@/lib/prisma';
-import { buildCoachPlan, buildGappingLadder, summarizeSession } from '@/lib/r10';
+import { buildGappingLadder, summarizeSession } from '@/lib/r10';
 import { parseStoredSessionPayload, toShotRecords } from '@/lib/session-storage';
 
 type RouteContext = {
@@ -12,7 +12,7 @@ type RouteContext = {
   };
 };
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function POST(_request: Request, context: RouteContext) {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) {
@@ -20,24 +20,22 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 
   const sessionId = context.params.sessionId;
-  const entry = await prisma.shotSession.findFirst({
+  const targetSession = await prisma.shotSession.findFirst({
     where: {
       id: sessionId,
       userId
     },
     select: {
       id: true,
-      sourceFile: true,
-      importedAt: true,
       notes: true
     }
   });
 
-  if (!entry) {
+  if (!targetSession) {
     return NextResponse.json({ error: 'Session not found.' }, { status: 404 });
   }
 
-  const payload = parseStoredSessionPayload(entry.notes);
+  const payload = parseStoredSessionPayload(targetSession.notes);
   if (!payload) {
     return NextResponse.json({ error: 'Session data is unavailable.' }, { status: 422 });
   }
@@ -45,25 +43,23 @@ export async function GET(_request: Request, context: RouteContext) {
   const shots = toShotRecords(payload.shots);
   const summary = summarizeSession(shots);
   const gappingLadder = buildGappingLadder(summary);
-  const coachPlan = buildCoachPlan(summary, gappingLadder);
   const coachV2Plan = buildCoachV2Plan(summary, gappingLadder, { sessionsAnalyzed: 1 });
   const peerSessions = await prisma.shotSession.findMany({
     where: {
       userId,
-      id: { not: entry.id }
+      id: { not: targetSession.id }
     },
     orderBy: { importedAt: 'desc' },
     select: {
-      id: true,
       notes: true
     }
   });
   const parsedPeerSessions = peerSessions
-    .map((session) => {
-      const payload = parseStoredSessionPayload(session.notes);
-      return payload ? toShotRecords(payload.shots) : null;
+    .map((entry) => {
+      const parsed = parseStoredSessionPayload(entry.notes);
+      return parsed ? toShotRecords(parsed.shots) : null;
     })
-    .filter((sessionShots): sessionShots is ReturnType<typeof toShotRecords> => sessionShots !== null);
+    .filter((entry): entry is ReturnType<typeof toShotRecords> => entry !== null);
   const baselineShots = parsedPeerSessions.flat();
   const baselineSummary = baselineShots.length ? summarizeSession(baselineShots) : null;
   const trendDeltas = buildTrendDeltas(
@@ -86,14 +82,34 @@ export async function GET(_request: Request, context: RouteContext) {
   });
   const ruleInsights = buildRuleInsights(shots, summary, gappingLadder, drillLogs);
 
+  if (!coachV2Plan) {
+    return NextResponse.json({ error: 'Could not generate analysis.' }, { status: 422 });
+  }
+
+  const analysis = await prisma.sessionAnalysis.upsert({
+    where: { shotSessionId: targetSession.id },
+    create: {
+      userId,
+      shotSessionId: targetSession.id,
+      coachPlanV2: coachV2Plan,
+      trendDeltas,
+      ruleInsights
+    },
+    update: {
+      coachPlanV2: coachV2Plan,
+      trendDeltas,
+      ruleInsights
+    },
+    select: {
+      id: true,
+      updatedAt: true
+    }
+  });
+
   return NextResponse.json({
-    id: entry.id,
-    sourceFile: entry.sourceFile,
-    importedAt: entry.importedAt,
-    shots,
-    summary,
-    gappingLadder,
-    coachPlan,
+    ok: true,
+    analysisId: analysis.id,
+    updatedAt: analysis.updatedAt,
     coachV2Plan,
     trendDeltas,
     ruleInsights
