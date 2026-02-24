@@ -93,6 +93,8 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
   const [drillNotes, setDrillNotes] = useState('');
   const [drillStatus, setDrillStatus] = useState<string | null>(null);
   const [analysisStatus, setAnalysisStatus] = useState<string | null>(null);
+  const [coachSummary, setCoachSummary] = useState<{ text: string; source: string; model: string | null } | null>(null);
+  const [summaryStatus, setSummaryStatus] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -207,6 +209,22 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
       return;
     }
     setAnalysisStatus('Analysis snapshot saved.');
+  };
+
+  const generateSummary = async () => {
+    if (!selectedSession) return;
+    setSummaryStatus('Generating summary...');
+    setCoachSummary(null);
+    const response = await fetch(`/api/coach/summary/${selectedSession.id}`, {
+      method: 'POST'
+    });
+    if (!response.ok) {
+      setSummaryStatus('Could not generate summary.');
+      return;
+    }
+    const payload = (await response.json()) as { summary: string; source: string; model: string | null };
+    setCoachSummary({ text: payload.summary, source: payload.source, model: payload.model });
+    setSummaryStatus(null);
   };
 
   return (
@@ -510,6 +528,18 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
                 </button>
                 {analysisStatus ? ` ${analysisStatus}` : ''}
               </p>
+              <p>
+                <button type="button" onClick={() => void generateSummary()}>
+                  Generate Coach Summary
+                </button>
+                {summaryStatus ? ` ${summaryStatus}` : ''}
+              </p>
+              {coachSummary && (
+                <p>
+                  <strong>Coach summary ({coachSummary.source}{coachSummary.model ? `:${coachSummary.model}` : ''}):</strong>{' '}
+                  {coachSummary.text}
+                </p>
+              )}
             </>
           )}
           {selectedSession.trendDeltas && (
