@@ -78,8 +78,10 @@ model DrillLog {
   shotSessionId String?
   constraintKey String?
   drillName     String
+  videoUrl      String?
   durationMins  Int?
   perceivedOutcome Int?
+  recommendationSource String? @default("manual")
   notes         String?
   completedAt   DateTime     @default(now())
   createdAt     DateTime     @default(now())

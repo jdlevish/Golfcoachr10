@@ -1,3 +1,9 @@
+export type CoachDrillRecommendation = {
+  name: string;
+  youtubeUrl: string;
+  why: string;
+};
+
 export type CoachSummaryInput = {
   tone: 'straight' | 'encouraging' | 'technical';
   detailLevel: 'concise' | 'balanced' | 'deep';
@@ -19,6 +25,7 @@ export type CoachSummaryInput = {
 
 export type CoachSummaryResult = {
   summary: string;
+  recommendedDrills: CoachDrillRecommendation[];
   source: 'llm' | 'deterministic';
   model?: string;
 };
