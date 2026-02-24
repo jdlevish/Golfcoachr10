@@ -15,6 +15,14 @@ This phase introduces a deterministic Coach v2 layer and keeps Coach v1 response
 - Dashboard rendering updates for Coach v2 in:
   - `components/csv-uploader.tsx`
   - `components/session-history.tsx`
+- Coach memory persistence models:
+  - `CoachProfile`
+  - `SessionAnalysis`
+  - `DrillLog`
+- Coach memory APIs:
+  - `GET/PUT /api/coach/profile`
+  - `GET/POST /api/coach/drills`
+  - `POST /api/coach/analysis/[sessionId]`
 
 ## Coach v2 output model
 
@@ -49,6 +57,7 @@ Coach v1 (`coachPlan`) remains in API responses and existing callers are not bro
 ## Next Phase 1 targets
 
 - Add persistence models for coach memory and drill history
+  - completed
 
 ## Trend delta contract
 
@@ -70,6 +79,7 @@ Current deterministic rules:
 - Late-session dispersion spike (`if session runs long, offline spread increases`)
 - Top-club direction limiter (`if start-line improves on top-volume club, dispersion cost drops`)
 - Bag spacing risk (`if severe gap alerts persist, club selection variance stays high`)
+- Drill memory signal (`if prior drills for this constraint scored well, repeat them first`)
 
 If no rule is triggered, an info insight is returned to drive baseline-building behavior.
 

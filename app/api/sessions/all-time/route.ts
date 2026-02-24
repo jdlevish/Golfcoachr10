@@ -39,6 +39,17 @@ export async function GET() {
       };
     })
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  const drillLogs = await prisma.drillLog.findMany({
+    where: { userId },
+    orderBy: { completedAt: 'desc' },
+    take: 50,
+    select: {
+      constraintKey: true,
+      drillName: true,
+      perceivedOutcome: true,
+      completedAt: true
+    }
+  });
 
   const allShots = parsedSessions.flatMap((entry) => {
     return entry.shots;
@@ -63,7 +74,7 @@ export async function GET() {
       )
     : null;
   const ruleInsights = latestSession
-    ? buildRuleInsights(latestSession.shots, latestSession.summary, latestSession.gappingLadder)
+    ? buildRuleInsights(latestSession.shots, latestSession.summary, latestSession.gappingLadder, drillLogs)
     : [];
 
   return NextResponse.json({

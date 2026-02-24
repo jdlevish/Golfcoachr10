@@ -37,6 +37,23 @@ type AllTimePayload = {
   ruleInsights: RuleInsight[];
 };
 
+type CoachProfile = {
+  tone: 'straight' | 'encouraging' | 'technical';
+  detailLevel: 'concise' | 'balanced' | 'deep';
+  updatedAt: string | null;
+};
+
+type DrillLog = {
+  id: string;
+  shotSessionId: string | null;
+  constraintKey: string | null;
+  drillName: string;
+  durationMins: number | null;
+  perceivedOutcome: number | null;
+  notes: string | null;
+  completedAt: string;
+};
+
 type SessionHistoryProps = {
   refreshKey: number;
 };
@@ -67,24 +84,39 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
   const [selectedSession, setSelectedSession] = useState<SessionDetail | null>(null);
   const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [coachProfile, setCoachProfile] = useState<CoachProfile | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [drillLogs, setDrillLogs] = useState<DrillLog[]>([]);
+  const [drillName, setDrillName] = useState('');
+  const [drillDurationMins, setDrillDurationMins] = useState('20');
+  const [drillOutcome, setDrillOutcome] = useState('3');
+  const [drillNotes, setDrillNotes] = useState('');
+  const [drillStatus, setDrillStatus] = useState<string | null>(null);
+  const [analysisStatus, setAnalysisStatus] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
       setError(null);
-      const [sessionsResponse, allTimeResponse] = await Promise.all([
+      const [sessionsResponse, allTimeResponse, profileResponse, drillLogsResponse] = await Promise.all([
         fetch('/api/sessions', { cache: 'no-store' }),
-        fetch('/api/sessions/all-time', { cache: 'no-store' })
+        fetch('/api/sessions/all-time', { cache: 'no-store' }),
+        fetch('/api/coach/profile', { cache: 'no-store' }),
+        fetch('/api/coach/drills?limit=10', { cache: 'no-store' })
       ]);
 
-      if (!sessionsResponse.ok || !allTimeResponse.ok) {
+      if (!sessionsResponse.ok || !allTimeResponse.ok || !profileResponse.ok || !drillLogsResponse.ok) {
         setError('Could not load session history.');
         return;
       }
 
       const sessionsPayload = (await sessionsResponse.json()) as { sessions: SessionListItem[] };
       const allTimePayload = (await allTimeResponse.json()) as AllTimePayload;
+      const profilePayload = (await profileResponse.json()) as { profile: CoachProfile };
+      const drillLogsPayload = (await drillLogsResponse.json()) as { drillLogs: DrillLog[] };
       setSessions(sessionsPayload.sessions);
       setAllTime(allTimePayload);
+      setCoachProfile(profilePayload.profile);
+      setDrillLogs(drillLogsPayload.drillLogs);
       if (!sessionsPayload.sessions.length) {
         setSelectedSession(null);
       }
@@ -104,7 +136,77 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
     }
     const payload = (await response.json()) as SessionDetail;
     setSelectedSession(payload);
+    if (payload.coachV2Plan?.practicePlan.steps[0]) {
+      setDrillName(payload.coachV2Plan.practicePlan.steps[0].title);
+    }
     setLoadingSessionId(null);
+  };
+
+  const saveProfile = async () => {
+    if (!coachProfile) return;
+    setSavingProfile(true);
+    setError(null);
+    const response = await fetch('/api/coach/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tone: coachProfile.tone,
+        detailLevel: coachProfile.detailLevel
+      })
+    });
+    if (!response.ok) {
+      setSavingProfile(false);
+      setError('Could not save coach profile.');
+      return;
+    }
+    const payload = (await response.json()) as { profile: CoachProfile };
+    setCoachProfile(payload.profile);
+    setSavingProfile(false);
+  };
+
+  const logDrill = async () => {
+    if (!drillName.trim()) {
+      setDrillStatus('Enter a drill name first.');
+      return;
+    }
+    setDrillStatus(null);
+    const response = await fetch('/api/coach/drills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        shotSessionId: selectedSession?.id,
+        constraintKey: selectedSession?.coachV2Plan?.primaryConstraint.key,
+        drillName: drillName.trim(),
+        durationMins: Number(drillDurationMins),
+        perceivedOutcome: Number(drillOutcome),
+        notes: drillNotes.trim() || undefined
+      })
+    });
+
+    if (!response.ok) {
+      setDrillStatus('Could not save drill log.');
+      return;
+    }
+
+    setDrillStatus('Drill logged.');
+    const refreshResponse = await fetch('/api/coach/drills?limit=10', { cache: 'no-store' });
+    if (refreshResponse.ok) {
+      const payload = (await refreshResponse.json()) as { drillLogs: DrillLog[] };
+      setDrillLogs(payload.drillLogs);
+    }
+  };
+
+  const snapshotAnalysis = async () => {
+    if (!selectedSession) return;
+    setAnalysisStatus(null);
+    const response = await fetch(`/api/coach/analysis/${selectedSession.id}`, {
+      method: 'POST'
+    });
+    if (!response.ok) {
+      setAnalysisStatus('Could not snapshot analysis.');
+      return;
+    }
+    setAnalysisStatus('Analysis snapshot saved.');
   };
 
   return (
@@ -115,6 +217,53 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
       {allTime && (
         <section className="auth-panel">
           <h3>All-Time Performance</h3>
+          {coachProfile && (
+            <>
+              <h3>Coach Preferences</h3>
+              <p className="helper-text">
+                Tune deterministic and future AI coaching delivery. Last updated:{' '}
+                {coachProfile.updatedAt ? formatDateTime(coachProfile.updatedAt) : 'Never'}
+              </p>
+              <div className="summary-grid">
+                <article>
+                  <h3>Tone</h3>
+                  <select
+                    value={coachProfile.tone}
+                    onChange={(event) =>
+                      setCoachProfile((current) =>
+                        current ? { ...current, tone: event.target.value as CoachProfile['tone'] } : current
+                      )
+                    }
+                  >
+                    <option value="encouraging">Encouraging</option>
+                    <option value="straight">Straight</option>
+                    <option value="technical">Technical</option>
+                  </select>
+                </article>
+                <article>
+                  <h3>Detail</h3>
+                  <select
+                    value={coachProfile.detailLevel}
+                    onChange={(event) =>
+                      setCoachProfile((current) =>
+                        current ? { ...current, detailLevel: event.target.value as CoachProfile['detailLevel'] } : current
+                      )
+                    }
+                  >
+                    <option value="concise">Concise</option>
+                    <option value="balanced">Balanced</option>
+                    <option value="deep">Deep</option>
+                  </select>
+                </article>
+                <article>
+                  <h3>Save</h3>
+                  <button type="button" onClick={() => void saveProfile()} disabled={savingProfile}>
+                    {savingProfile ? 'Saving...' : 'Save Coach Profile'}
+                  </button>
+                </article>
+              </div>
+            </>
+          )}
           <section className="summary-grid" aria-label="All-time summary">
             <article>
               <h3>Sessions</h3>
@@ -269,6 +418,33 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               </ul>
             </>
           )}
+          <h3>Recent Drill Logs</h3>
+          {drillLogs.length === 0 ? (
+            <p className="helper-text">No drill logs yet.</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Drill</th>
+                  <th>Constraint</th>
+                  <th>Duration</th>
+                  <th>Outcome</th>
+                </tr>
+              </thead>
+              <tbody>
+                {drillLogs.map((log) => (
+                  <tr key={log.id}>
+                    <td>{formatDateTime(log.completedAt)}</td>
+                    <td>{log.drillName}</td>
+                    <td>{log.constraintKey ?? '-'}</td>
+                    <td>{log.durationMins ?? '-'} min</td>
+                    <td>{log.perceivedOutcome ?? '-'}/5</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </section>
       )}
 
@@ -328,6 +504,12 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               <p>
                 <strong>Target:</strong> {selectedSession.coachV2Plan.practicePlan.goal}
               </p>
+              <p>
+                <button type="button" onClick={() => void snapshotAnalysis()}>
+                  Save Analysis Snapshot
+                </button>
+                {analysisStatus ? ` ${analysisStatus}` : ''}
+              </p>
             </>
           )}
           {selectedSession.trendDeltas && (
@@ -368,6 +550,46 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               ))}
             </ul>
           )}
+          <h3>Log Completed Drill</h3>
+          <div className="summary-grid">
+            <article>
+              <h3>Drill Name</h3>
+              <input value={drillName} onChange={(event) => setDrillName(event.target.value)} placeholder="e.g. Alignment gate" />
+            </article>
+            <article>
+              <h3>Duration (min)</h3>
+              <input
+                type="number"
+                min={1}
+                max={180}
+                value={drillDurationMins}
+                onChange={(event) => setDrillDurationMins(event.target.value)}
+              />
+            </article>
+            <article>
+              <h3>Outcome (1-5)</h3>
+              <input
+                type="number"
+                min={1}
+                max={5}
+                value={drillOutcome}
+                onChange={(event) => setDrillOutcome(event.target.value)}
+              />
+            </article>
+          </div>
+          <p>
+            <input
+              value={drillNotes}
+              onChange={(event) => setDrillNotes(event.target.value)}
+              placeholder="Optional notes about what worked"
+            />
+          </p>
+          <p>
+            <button type="button" onClick={() => void logDrill()}>
+              Log Drill
+            </button>
+            {drillStatus ? ` ${drillStatus}` : ''}
+          </p>
         </section>
       )}
     </section>

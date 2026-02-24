@@ -15,17 +15,78 @@ model User {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   shotSessions ShotSession[]
+  coachProfile CoachProfile?
+  drillLogs    DrillLog[]
+  analyses     SessionAnalysis[]
 }
 
 model ShotSession {
-  id          String   @id @default(cuid())
-  userId      String
-  sourceFile  String?
-  notes       String?
-  importedAt  DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String  @id @default(cuid())
+  userId    String
+  sourceFile String?
+  notes      String?
+  importedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analysis   SessionAnalysis?
+  drillLogs  DrillLog[]
 
   @@index([userId, importedAt])
+}
+
+enum CoachTone {
+  straight
+  encouraging
+  technical
+}
+
+enum CoachDetailLevel {
+  concise
+  balanced
+  deep
+}
+
+model CoachProfile {
+  id          String          @id @default(cuid())
+  userId      String          @unique
+  tone        CoachTone       @default(encouraging)
+  detailLevel CoachDetailLevel @default(balanced)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SessionAnalysis {
+  id            String      @id @default(cuid())
+  userId        String
+  shotSessionId String      @unique
+  coachPlanV2   Json
+  trendDeltas   Json
+  ruleInsights  Json
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shotSession   ShotSession @relation(fields: [shotSessionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+}
+
+model DrillLog {
+  id            String       @id @default(cuid())
+  userId        String
+  shotSessionId String?
+  constraintKey String?
+  drillName     String
+  durationMins  Int?
+  perceivedOutcome Int?
+  notes         String?
+  completedAt   DateTime     @default(now())
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shotSession   ShotSession? @relation(fields: [shotSessionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, completedAt])
+  @@index([shotSessionId])
 }

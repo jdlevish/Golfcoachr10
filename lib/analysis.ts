@@ -10,6 +10,13 @@ const RULE_TOP_CLUB_OFFLINE_STD = 15;
 const RULE_SPEED_CARRY_CORRELATION = 0.55;
 const RULE_FATIGUE_MULTIPLIER = 1.2;
 
+export type DrillMemoryLog = {
+  constraintKey: string | null;
+  drillName: string;
+  perceivedOutcome: number | null;
+  completedAt: Date | string;
+};
+
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
 const toDirection = (delta: number | null, lowerIsBetter: boolean): TrendDirection => {
@@ -163,7 +170,8 @@ export const buildTrendDeltas = (
 export const buildRuleInsights = (
   shots: ShotRecord[],
   summary: SessionSummary,
-  ladder: GappingLadder
+  ladder: GappingLadder,
+  drillLogs: DrillMemoryLog[] = []
 ): RuleInsight[] => {
   const insights: RuleInsight[] = [];
 
@@ -238,6 +246,30 @@ export const buildRuleInsights = (
       ifThen: 'If your gap alerts persist, then on-course club selection variance stays high.',
       evidence: `${severeGapCount} severe gap alert(s) detected (overlap/cliff).`,
       action: 'Run a focused gapping retest on the two clubs around each severe alert.'
+    });
+  }
+
+  const latestCoach = buildCoachV2Plan(summary, ladder, { sessionsAnalyzed: 1 });
+  const primaryKey = latestCoach?.primaryConstraint.key ?? null;
+  const matchingDrills = primaryKey
+    ? drillLogs.filter((log) => log.constraintKey === primaryKey && typeof log.perceivedOutcome === 'number')
+    : [];
+  if (matchingDrills.length >= 2) {
+    const avgOutcome =
+      matchingDrills.reduce((sum, log) => sum + (log.perceivedOutcome as number), 0) / matchingDrills.length;
+    const bestDrill = [...matchingDrills].sort(
+      (a, b) => (b.perceivedOutcome ?? 0) - (a.perceivedOutcome ?? 0)
+    )[0];
+    insights.push({
+      id: 'drill-memory',
+      severity: avgOutcome >= 3.8 ? 'info' : 'warning',
+      title: 'Drill memory signal',
+      ifThen: `If you repeat your proven ${latestCoach?.primaryConstraint.label.toLowerCase()} drill, then next-session execution is more likely to hold.`,
+      evidence: `${matchingDrills.length} prior drill log(s) for this constraint; average outcome ${avgOutcome.toFixed(1)}/5.`,
+      action:
+        avgOutcome >= 3.8
+          ? `Start with "${bestDrill.drillName}" for 10-15 balls before adding variability.`
+          : `Replace or simplify "${bestDrill.drillName}" and log a fresh outcome after today's session.`
     });
   }
 
