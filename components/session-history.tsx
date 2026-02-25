@@ -48,8 +48,10 @@ type DrillLog = {
   shotSessionId: string | null;
   constraintKey: string | null;
   drillName: string;
+  videoUrl: string | null;
   durationMins: number | null;
   perceivedOutcome: number | null;
+  recommendationSource: string | null;
   notes: string | null;
   completedAt: string;
 };
@@ -93,7 +95,13 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
   const [drillNotes, setDrillNotes] = useState('');
   const [drillStatus, setDrillStatus] = useState<string | null>(null);
   const [analysisStatus, setAnalysisStatus] = useState<string | null>(null);
-  const [coachSummary, setCoachSummary] = useState<{ text: string; source: string; model: string | null } | null>(null);
+  const [coachSummary, setCoachSummary] = useState<{
+    text: string;
+    source: string;
+    model: string | null;
+    recommendedDrills: Array<{ name: string; youtubeUrl: string; why: string }>;
+    drillRecommendationsLogged: number;
+  } | null>(null);
   const [summaryStatus, setSummaryStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -222,8 +230,25 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
       setSummaryStatus('Could not generate summary.');
       return;
     }
-    const payload = (await response.json()) as { summary: string; source: string; model: string | null };
-    setCoachSummary({ text: payload.summary, source: payload.source, model: payload.model });
+    const payload = (await response.json()) as {
+      summary: string;
+      source: string;
+      model: string | null;
+      recommendedDrills: Array<{ name: string; youtubeUrl: string; why: string }>;
+      drillRecommendationsLogged: number;
+    };
+    setCoachSummary({
+      text: payload.summary,
+      source: payload.source,
+      model: payload.model,
+      recommendedDrills: payload.recommendedDrills ?? [],
+      drillRecommendationsLogged: payload.drillRecommendationsLogged ?? 0
+    });
+    const refreshResponse = await fetch('/api/coach/drills?limit=10', { cache: 'no-store' });
+    if (refreshResponse.ok) {
+      const logsPayload = (await refreshResponse.json()) as { drillLogs: DrillLog[] };
+      setDrillLogs(logsPayload.drillLogs);
+    }
     setSummaryStatus(null);
   };
 
@@ -445,6 +470,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
                 <tr>
                   <th>Date</th>
                   <th>Drill</th>
+                  <th>Video</th>
                   <th>Constraint</th>
                   <th>Duration</th>
                   <th>Outcome</th>
@@ -455,6 +481,15 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
                   <tr key={log.id}>
                     <td>{formatDateTime(log.completedAt)}</td>
                     <td>{log.drillName}</td>
+                    <td>
+                      {log.videoUrl ? (
+                        <a href={log.videoUrl} target="_blank" rel="noreferrer">
+                          YouTube
+                        </a>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
                     <td>{log.constraintKey ?? '-'}</td>
                     <td>{log.durationMins ?? '-'} min</td>
                     <td>{log.perceivedOutcome ?? '-'}/5</td>
@@ -535,10 +570,32 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
                 {summaryStatus ? ` ${summaryStatus}` : ''}
               </p>
               {coachSummary && (
-                <p>
-                  <strong>Coach summary ({coachSummary.source}{coachSummary.model ? `:${coachSummary.model}` : ''}):</strong>{' '}
-                  {coachSummary.text}
-                </p>
+                <>
+                  <p>
+                    <strong>Coach summary ({coachSummary.source}{coachSummary.model ? `:${coachSummary.model}` : ''}):</strong>{' '}
+                    {coachSummary.text}
+                  </p>
+                  <p>
+                    <strong>Drill recommendations logged:</strong> {coachSummary.drillRecommendationsLogged}
+                  </p>
+                  {coachSummary.recommendedDrills.length > 0 && (
+                    <>
+                      <p>
+                        <strong>Recommended drills:</strong>
+                      </p>
+                      <ul>
+                        {coachSummary.recommendedDrills.map((drill) => (
+                          <li key={`${drill.name}-${drill.youtubeUrl}`}>
+                            <strong>{drill.name}:</strong> {drill.why} {' '}
+                            <a href={drill.youtubeUrl} target="_blank" rel="noreferrer">
+                              YouTube
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </>
               )}
             </>
           )}

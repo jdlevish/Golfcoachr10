@@ -9,9 +9,11 @@ const createDrillLogSchema = z.object({
     .enum(['direction_consistency', 'distance_control', 'bag_gapping', 'strike_quality'])
     .optional(),
   drillName: z.string().trim().min(2).max(120),
+  videoUrl: z.string().url().max(500).optional(),
   durationMins: z.number().int().min(1).max(180).optional(),
   perceivedOutcome: z.number().int().min(1).max(5).optional(),
-  notes: z.string().trim().max(500).optional()
+  notes: z.string().trim().max(500).optional(),
+  recommendationSource: z.enum(['manual', 'ai_summary']).optional()
 });
 
 export async function GET(request: Request) {
@@ -34,8 +36,10 @@ export async function GET(request: Request) {
       shotSessionId: true,
       constraintKey: true,
       drillName: true,
+      videoUrl: true,
       durationMins: true,
       perceivedOutcome: true,
+      recommendationSource: true,
       notes: true,
       completedAt: true
     }
@@ -74,8 +78,10 @@ export async function POST(request: Request) {
       shotSessionId,
       constraintKey: parsed.data.constraintKey ?? null,
       drillName: parsed.data.drillName,
+      videoUrl: parsed.data.videoUrl ?? null,
       durationMins: parsed.data.durationMins ?? null,
       perceivedOutcome: parsed.data.perceivedOutcome ?? null,
+      recommendationSource: parsed.data.recommendationSource ?? 'manual',
       notes: parsed.data.notes ?? null
     },
     select: {

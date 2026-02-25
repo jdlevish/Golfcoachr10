@@ -96,3 +96,14 @@ Rule thresholds are centralized in `lib/analysis.ts` with explicit minimum sampl
   - coach constraints and confidence
   - trend deltas summary
   - top deterministic if-then insights
+
+## YouTube drill recommendations
+
+- `POST /api/coach/summary/[sessionId]` now returns:
+  - `summary`
+  - `recommendedDrills[]` (`name`, `youtubeUrl`, `why`)
+  - `drillRecommendationsLogged` (count inserted into drill memory)
+- Recommended drills are automatically persisted into `DrillLog` with:
+  - `videoUrl`
+  - `recommendationSource = "ai_summary"`
+- Duplicate recommendations for the same session are de-duplicated by `drillName + videoUrl`.

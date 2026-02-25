@@ -100,8 +100,42 @@ export async function POST(_request: Request, context: RouteContext) {
     }))
   });
 
+  const existingRecommendations = await prisma.drillLog.findMany({
+    where: {
+      userId,
+      shotSessionId: targetSession.id,
+      recommendationSource: 'ai_summary'
+    },
+    select: {
+      drillName: true,
+      videoUrl: true
+    }
+  });
+  const existingKey = new Set(
+    existingRecommendations.map((item) => `${item.drillName.toLowerCase()}::${item.videoUrl ?? ''}`)
+  );
+  const inserts = summaryResult.recommendedDrills.filter((drill) => {
+    const key = `${drill.name.toLowerCase()}::${drill.youtubeUrl}`;
+    return !existingKey.has(key);
+  });
+  if (inserts.length > 0) {
+    await prisma.drillLog.createMany({
+      data: inserts.map((drill) => ({
+        userId,
+        shotSessionId: targetSession.id,
+        constraintKey: coachV2Plan.primaryConstraint.key,
+        drillName: drill.name,
+        videoUrl: drill.youtubeUrl,
+        recommendationSource: 'ai_summary',
+        notes: `AI summary recommendation: ${drill.why}`
+      }))
+    });
+  }
+
   return NextResponse.json({
     summary: summaryResult.summary,
+    recommendedDrills: summaryResult.recommendedDrills,
+    drillRecommendationsLogged: inserts.length,
     source: summaryResult.source,
     model: summaryResult.model ?? null
   });
