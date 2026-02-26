@@ -6,15 +6,55 @@ import { buildCoachV2Plan } from '@/lib/coach-v2';
 import { buildCoachPlan, buildGappingLadder, summarizeSession } from '@/lib/r10';
 import { parseStoredSessionPayload, toShotRecords } from '@/lib/session-storage';
 
-export async function GET() {
+type TimeWindow = 'all' | '1w' | '1m' | '3m' | '9m' | '1y';
+
+const resolveWindowStart = (window: TimeWindow): Date | null => {
+  if (window === 'all') return null;
+
+  const now = new Date();
+  const start = new Date(now);
+
+  if (window === '1w') {
+    start.setDate(now.getDate() - 7);
+    return start;
+  }
+  if (window === '1m') {
+    start.setMonth(now.getMonth() - 1);
+    return start;
+  }
+  if (window === '3m') {
+    start.setMonth(now.getMonth() - 3);
+    return start;
+  }
+  if (window === '9m') {
+    start.setMonth(now.getMonth() - 9);
+    return start;
+  }
+
+  start.setFullYear(now.getFullYear() - 1);
+  return start;
+};
+
+export async function GET(request: Request) {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const url = new URL(request.url);
+  const rawWindow = url.searchParams.get('window');
+  const timeWindow: TimeWindow =
+    rawWindow === '1w' || rawWindow === '1m' || rawWindow === '3m' || rawWindow === '9m' || rawWindow === '1y'
+      ? rawWindow
+      : 'all';
+  const windowStart = resolveWindowStart(timeWindow);
+
   const sessions = await prisma.shotSession.findMany({
-    where: { userId },
+    where: {
+      userId,
+      ...(windowStart ? { importedAt: { gte: windowStart } } : {})
+    },
     orderBy: { importedAt: 'desc' },
     select: {
       id: true,
@@ -78,6 +118,7 @@ export async function GET() {
     : [];
 
   return NextResponse.json({
+    timeWindow,
     sessionsCount: sessions.length,
     summary,
     gappingLadder,

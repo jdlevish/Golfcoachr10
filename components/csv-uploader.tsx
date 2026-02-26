@@ -268,16 +268,16 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
               <tbody>
                 {gappingLadder.rows.map((row) => (
                   <tr key={row.club}>
-                    <td>{row.displayClub}</td>
-                    <td>{formatValue(row.medianCarryYds, ' yds')}</td>
-                    <td>{formatRange(row.p10CarryYds, row.p90CarryYds, ' yds')}</td>
-                    <td>{formatValue(row.gapToNextYds, ' yds')}</td>
-                    <td>
+                    <td data-label="Club">{row.displayClub}</td>
+                    <td data-label="Median Carry">{formatValue(row.medianCarryYds, ' yds')}</td>
+                    <td data-label="P10-P90 Carry">{formatRange(row.p10CarryYds, row.p90CarryYds, ' yds')}</td>
+                    <td data-label="Gap To Next">{formatValue(row.gapToNextYds, ' yds')}</td>
+                    <td data-label="Status">
                       <span className={`gap-badge ${row.gapStatus ? `gap-${row.gapStatus}` : 'gap-none'}`}>
                         {formatGapStatus(row.gapStatus)}
                       </span>
                     </td>
-                    <td>{row.warning ?? '—'}</td>
+                    <td data-label="Warning">{row.warning ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -402,7 +402,7 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
               <tbody>
                 {summary.clubs.map((club) => (
                   <tr key={club.name}>
-                    <td>
+                    <td data-label="Club">
                       <div>{club.displayName}</div>
                       {(club.shotLabels.length > 1 || club.modelLabels.length > 0) && (
                         <small>
@@ -412,12 +412,12 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
                         </small>
                       )}
                     </td>
-                    <td>{club.shots}</td>
-                    <td>{formatValue(club.medianCarryYds, ' yds')}</td>
-                    <td>{formatRange(club.p10CarryYds, club.p90CarryYds, ' yds')}</td>
-                    <td>{formatValue(club.carryStdDevYds, ' yds')}</td>
-                    <td>{formatValue(club.offlineStdDevYds, ' yds')}</td>
-                    <td>{formatValue(club.avgCarryYds, ' yds')}</td>
+                    <td data-label="Shots">{club.shots}</td>
+                    <td data-label="Median Carry">{formatValue(club.medianCarryYds, ' yds')}</td>
+                    <td data-label="P10-P90 Carry">{formatRange(club.p10CarryYds, club.p90CarryYds, ' yds')}</td>
+                    <td data-label="Carry Std Dev">{formatValue(club.carryStdDevYds, ' yds')}</td>
+                    <td data-label="Offline Std Dev">{formatValue(club.offlineStdDevYds, ' yds')}</td>
+                    <td data-label="Avg Carry">{formatValue(club.avgCarryYds, ' yds')}</td>
                   </tr>
                 ))}
               </tbody>
