@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import type { CoachPlan, GappingLadder, SessionSummary } from '@/lib/r10';
 import type { RuleInsight, TrendDeltas } from '@/types/analysis';
 import type { CoachV2Plan } from '@/types/coach';
@@ -60,6 +60,17 @@ type SessionHistoryProps = {
   refreshKey: number;
 };
 
+type TimeWindow = 'all' | '1w' | '1m' | '3m' | '9m' | '1y';
+
+const timeWindowOptions: Array<{ value: TimeWindow; label: string }> = [
+  { value: 'all', label: 'All Time' },
+  { value: '1w', label: '1 Week' },
+  { value: '1m', label: '1 Month' },
+  { value: '3m', label: '3 Months' },
+  { value: '9m', label: '9 Months' },
+  { value: '1y', label: '1 Year' }
+];
+
 const formatNumber = (value: number | null, suffix = '') =>
   value === null ? '-' : `${value.toFixed(1)}${suffix}`;
 const formatRange = (low: number | null, high: number | null, suffix = '') => {
@@ -79,6 +90,27 @@ const formatTrendDelta = (delta: number | null, unit: string) => {
   const sign = delta > 0 ? '+' : '';
   return `${sign}${delta.toFixed(1)} ${unit}`;
 };
+
+type CollapsibleSectionProps = {
+  title: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+};
+
+function CollapsibleSection({ title, isOpen, onToggle, children }: CollapsibleSectionProps) {
+  return (
+    <section className="auth-panel">
+      <div className="section-header">
+        <h3>{title}</h3>
+        <button type="button" onClick={onToggle}>
+          {isOpen ? 'Hide' : 'Show'}
+        </button>
+      </div>
+      {isOpen && children}
+    </section>
+  );
+}
 
 export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
@@ -103,13 +135,17 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
     drillRecommendationsLogged: number;
   } | null>(null);
   const [summaryStatus, setSummaryStatus] = useState<string | null>(null);
+  const [timeWindow, setTimeWindow] = useState<TimeWindow>('all');
+  const [showAllTime, setShowAllTime] = useState(true);
+  const [showSavedSessions, setShowSavedSessions] = useState(true);
+  const [showSessionDetail, setShowSessionDetail] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       setError(null);
       const [sessionsResponse, allTimeResponse, profileResponse, drillLogsResponse] = await Promise.all([
         fetch('/api/sessions', { cache: 'no-store' }),
-        fetch('/api/sessions/all-time', { cache: 'no-store' }),
+        fetch(`/api/sessions/all-time?window=${timeWindow}`, { cache: 'no-store' }),
         fetch('/api/coach/profile', { cache: 'no-store' }),
         fetch('/api/coach/drills?limit=10', { cache: 'no-store' })
       ]);
@@ -133,7 +169,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
     };
 
     void load();
-  }, [refreshKey]);
+  }, [refreshKey, timeWindow]);
 
   const loadSession = async (sessionId: string) => {
     setLoadingSessionId(sessionId);
@@ -146,6 +182,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
     }
     const payload = (await response.json()) as SessionDetail;
     setSelectedSession(payload);
+    setShowSessionDetail(true);
     if (payload.coachV2Plan?.practicePlan.steps[0]) {
       setDrillName(payload.coachV2Plan.practicePlan.steps[0].title);
     }
@@ -254,12 +291,27 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
 
   return (
     <section className="stack" aria-label="Saved sessions">
-      <h2>Saved Sessions</h2>
+      <h2>Session Insights</h2>
       {error && <p className="error">{error}</p>}
 
       {allTime && (
-        <section className="auth-panel">
-          <h3>All-Time Performance</h3>
+        <CollapsibleSection
+          title="All-Time Performance"
+          isOpen={showAllTime}
+          onToggle={() => setShowAllTime((value) => !value)}
+        >
+          <div className="time-window-row" role="group" aria-label="All-time filter windows">
+            {timeWindowOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={timeWindow === option.value ? 'window-button active' : 'window-button'}
+                onClick={() => setTimeWindow(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
           {coachProfile && (
             <>
               <h3>Coach Preferences</h3>
@@ -367,16 +419,16 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               <tbody>
                 {allTime.gappingLadder.rows.map((row) => (
                   <tr key={row.club}>
-                    <td>{row.displayClub}</td>
-                    <td>{formatNumber(row.medianCarryYds, ' yds')}</td>
-                    <td>{formatRange(row.p10CarryYds, row.p90CarryYds, ' yds')}</td>
-                    <td>{formatNumber(row.gapToNextYds, ' yds')}</td>
-                    <td>
+                    <td data-label="Club">{row.displayClub}</td>
+                    <td data-label="Median Carry">{formatNumber(row.medianCarryYds, ' yds')}</td>
+                    <td data-label="P10-P90 Carry">{formatRange(row.p10CarryYds, row.p90CarryYds, ' yds')}</td>
+                    <td data-label="Gap To Next">{formatNumber(row.gapToNextYds, ' yds')}</td>
+                    <td data-label="Status">
                       <span className={`gap-badge ${row.gapStatus ? `gap-${row.gapStatus}` : 'gap-none'}`}>
                         {formatGapStatus(row.gapStatus)}
                       </span>
                     </td>
-                    <td>{row.warning ?? '-'}</td>
+                    <td data-label="Warning">{row.warning ?? '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -402,13 +454,13 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               <tbody>
                 {allTime.summary.clubs.map((club) => (
                   <tr key={club.name}>
-                    <td>{club.displayName}</td>
-                    <td>{club.shots}</td>
-                    <td>{formatNumber(club.medianCarryYds, ' yds')}</td>
-                    <td>{formatRange(club.p10CarryYds, club.p90CarryYds, ' yds')}</td>
-                    <td>{formatNumber(club.carryStdDevYds, ' yds')}</td>
-                    <td>{formatNumber(club.offlineStdDevYds, ' yds')}</td>
-                    <td>{formatNumber(club.avgCarryYds, ' yds')}</td>
+                    <td data-label="Club">{club.displayName}</td>
+                    <td data-label="Shots">{club.shots}</td>
+                    <td data-label="Median Carry">{formatNumber(club.medianCarryYds, ' yds')}</td>
+                    <td data-label="P10-P90 Carry">{formatRange(club.p10CarryYds, club.p90CarryYds, ' yds')}</td>
+                    <td data-label="Carry Std Dev">{formatNumber(club.carryStdDevYds, ' yds')}</td>
+                    <td data-label="Offline Std Dev">{formatNumber(club.offlineStdDevYds, ' yds')}</td>
+                    <td data-label="Avg Carry">{formatNumber(club.avgCarryYds, ' yds')}</td>
                   </tr>
                 ))}
               </tbody>
@@ -438,11 +490,11 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
                 <tbody>
                   {allTime.trendDeltas.metrics.map((metric) => (
                     <tr key={metric.key}>
-                      <td>{metric.label}</td>
-                      <td>{formatNumber(metric.current, ` ${metric.unit}`)}</td>
-                      <td>{formatNumber(metric.baseline, ` ${metric.unit}`)}</td>
-                      <td>{formatTrendDelta(metric.delta, metric.unit)}</td>
-                      <td>{metric.direction}</td>
+                      <td data-label="Metric">{metric.label}</td>
+                      <td data-label="Current">{formatNumber(metric.current, ` ${metric.unit}`)}</td>
+                      <td data-label="Baseline">{formatNumber(metric.baseline, ` ${metric.unit}`)}</td>
+                      <td data-label="Delta">{formatTrendDelta(metric.delta, metric.unit)}</td>
+                      <td data-label="Direction">{metric.direction}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -479,9 +531,9 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               <tbody>
                 {drillLogs.map((log) => (
                   <tr key={log.id}>
-                    <td>{formatDateTime(log.completedAt)}</td>
-                    <td>{log.drillName}</td>
-                    <td>
+                    <td data-label="Date">{formatDateTime(log.completedAt)}</td>
+                    <td data-label="Drill">{log.drillName}</td>
+                    <td data-label="Video">
                       {log.videoUrl ? (
                         <a href={log.videoUrl} target="_blank" rel="noreferrer">
                           YouTube
@@ -490,21 +542,25 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
                         '-'
                       )}
                     </td>
-                    <td>{log.constraintKey ?? '-'}</td>
-                    <td>{log.durationMins ?? '-'} min</td>
-                    <td>{log.perceivedOutcome ?? '-'}/5</td>
+                    <td data-label="Constraint">{log.constraintKey ?? '-'}</td>
+                    <td data-label="Duration">{log.durationMins ?? '-'} min</td>
+                    <td data-label="Outcome">{log.perceivedOutcome ?? '-'}/5</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
-        </section>
+        </CollapsibleSection>
       )}
 
-      {!sessions.length ? (
-        <p className="helper-text">No saved sessions yet. Upload and save your first range session.</p>
-      ) : (
-        <section>
+      <CollapsibleSection
+        title="Saved Sessions"
+        isOpen={showSavedSessions}
+        onToggle={() => setShowSavedSessions((value) => !value)}
+      >
+        {!sessions.length ? (
+          <p className="helper-text">No saved sessions yet. Upload and save your first range session.</p>
+        ) : (
           <table>
             <thead>
               <tr>
@@ -518,11 +574,11 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
             <tbody>
               {sessions.map((entry) => (
                 <tr key={entry.id}>
-                  <td>{formatDateTime(entry.importedAt)}</td>
-                  <td>{entry.sourceFile ?? '-'}</td>
-                  <td>{entry.shots}</td>
-                  <td>{formatNumber(entry.avgCarryYds, ' yds')}</td>
-                  <td>
+                  <td data-label="Date">{formatDateTime(entry.importedAt)}</td>
+                  <td data-label="Source File">{entry.sourceFile ?? '-'}</td>
+                  <td data-label="Shots">{entry.shots}</td>
+                  <td data-label="Avg Carry">{formatNumber(entry.avgCarryYds, ' yds')}</td>
+                  <td data-label="Action">
                     <button type="button" onClick={() => void loadSession(entry.id)} disabled={loadingSessionId === entry.id}>
                       {loadingSessionId === entry.id ? 'Loading...' : 'Open'}
                     </button>
@@ -531,12 +587,15 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               ))}
             </tbody>
           </table>
-        </section>
-      )}
+        )}
+      </CollapsibleSection>
 
       {selectedSession && (
-        <section className="auth-panel">
-          <h3>Session Detail</h3>
+        <CollapsibleSection
+          title="Session Detail"
+          isOpen={showSessionDetail}
+          onToggle={() => setShowSessionDetail((value) => !value)}
+        >
           <p>
             {formatDateTime(selectedSession.importedAt)} |{' '}
             {selectedSession.sourceFile ?? 'Unknown source'}
@@ -617,11 +676,11 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
                 <tbody>
                   {selectedSession.trendDeltas.metrics.map((metric) => (
                     <tr key={metric.key}>
-                      <td>{metric.label}</td>
-                      <td>{formatNumber(metric.current, ` ${metric.unit}`)}</td>
-                      <td>{formatNumber(metric.baseline, ` ${metric.unit}`)}</td>
-                      <td>{formatTrendDelta(metric.delta, metric.unit)}</td>
-                      <td>{metric.direction}</td>
+                      <td data-label="Metric">{metric.label}</td>
+                      <td data-label="Current">{formatNumber(metric.current, ` ${metric.unit}`)}</td>
+                      <td data-label="Baseline">{formatNumber(metric.baseline, ` ${metric.unit}`)}</td>
+                      <td data-label="Delta">{formatTrendDelta(metric.delta, metric.unit)}</td>
+                      <td data-label="Direction">{metric.direction}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -677,7 +736,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
             </button>
             {drillStatus ? ` ${drillStatus}` : ''}
           </p>
-        </section>
+        </CollapsibleSection>
       )}
     </section>
   );
