@@ -8,6 +8,7 @@ import {
   buildCoachPlan,
   buildGappingLadder,
   buildImportReport,
+  inferSessionDateFromRows,
   mapRowsToShots,
   summarizeSession,
   type GapStatus,
@@ -47,6 +48,7 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
   const [sourceFileName, setSourceFileName] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [savingSession, setSavingSession] = useState(false);
+  const [sessionDate, setSessionDate] = useState<string | null>(null);
 
   const visibleShots = useMemo(
     () => (showOutliers ? shots : shots.filter((shot) => !shot.isOutlier)),
@@ -79,8 +81,10 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
       complete(results) {
         const nextShots = mapRowsToShots(results.data);
         const report = buildImportReport(results.data, nextShots);
+        const inferredSessionDate = inferSessionDateFromRows(results.data);
 
         setImportReport(report);
+        setSessionDate(inferredSessionDate?.isoDate ?? null);
 
         if (!nextShots.length) {
           setError('No recognizable shot rows were found in this CSV.');
@@ -109,6 +113,7 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         sourceFile: sourceFileName ?? 'manual-upload',
+        sessionDate: sessionDate ?? undefined,
         shots: toStoredShots(shots)
       })
     });

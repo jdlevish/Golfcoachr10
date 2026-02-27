@@ -52,10 +52,8 @@ export async function GET(request: Request) {
 
   const sessions = await prisma.shotSession.findMany({
     where: {
-      userId,
-      ...(windowStart ? { importedAt: { gte: windowStart } } : {})
+      userId
     },
-    orderBy: { importedAt: 'desc' },
     select: {
       id: true,
       importedAt: true,
@@ -70,15 +68,22 @@ export async function GET(request: Request) {
       const shots = toShotRecords(payload.shots);
       const summary = summarizeSession(shots);
       const gappingLadder = buildGappingLadder(summary);
+      const parsedSessionDate =
+        payload.sessionDate && !Number.isNaN(new Date(payload.sessionDate).getTime())
+          ? new Date(payload.sessionDate)
+          : null;
+      const effectiveDate = parsedSessionDate ?? entry.importedAt;
       return {
         id: entry.id,
-        importedAt: entry.importedAt,
+        importedAt: effectiveDate,
         shots,
         summary,
         gappingLadder
       };
     })
-    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    .filter((entry) => (windowStart ? entry.importedAt >= windowStart : true))
+    .sort((a, b) => b.importedAt.getTime() - a.importedAt.getTime());
   const drillLogs = await prisma.drillLog.findMany({
     where: { userId },
     orderBy: { completedAt: 'desc' },

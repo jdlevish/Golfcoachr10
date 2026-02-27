@@ -31,6 +31,10 @@ export type ShotRecord = {
   raw: Record<string, string>;
 };
 
+export type SessionDateCandidate = {
+  isoDate: string;
+};
+
 export type ImportReport = {
   totalRows: number;
   parsedShots: number;
@@ -50,6 +54,7 @@ export type SessionSummary = {
   avgSpinRpm: number | null;
   clubs: {
     name: string;
+    clubType: string;
     displayName: string;
     shotLabels: string[];
     modelLabels: string[];
@@ -105,6 +110,7 @@ const keyAliases: Record<
   | 'clubType'
   | 'clubName'
   | 'clubModel'
+  | 'sessionDate'
   | 'ballSpeedMph'
   | 'launchAngleDeg'
   | 'carryYds'
@@ -116,6 +122,7 @@ const keyAliases: Record<
   clubType: ['club type', 'clubtype', 'club', 'club category'],
   clubName: ['club name'],
   clubModel: ['brand/model', 'brand model'],
+  sessionDate: ['date', 'session date', 'shot date', 'timestamp', 'time', 'datetime', 'date time'],
   ballSpeedMph: ['ball speed', 'ball speed (mph)'],
   launchAngleDeg: ['launch angle', 'launch angle (deg)'],
   carryYds: ['carry', 'carry distance', 'carry (yds)', 'carry (yards)', 'carry distance (yd)', 'carry distance (yds)', 'carry yd', 'carry yds'],
@@ -275,6 +282,59 @@ const compareClubTypeOrder = (a: string, b: string) => {
   return aKey.label.localeCompare(bKey.label);
 };
 
+const normalizeClubModel = (clubModel: string | null) => {
+  if (!clubModel) return null;
+  const normalized = clubModel.trim().toLowerCase();
+  return normalized || null;
+};
+
+const getShotGroupingKey = (shot: Pick<ShotRecord, 'clubType' | 'clubModel'>) => {
+  const normalizedModel = normalizeClubModel(shot.clubModel);
+  return normalizedModel ? `${shot.clubType}::${normalizedModel}` : shot.clubType;
+};
+
+const parseCsvDateCandidate = (value: string | undefined): Date | null => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const nativeParsed = new Date(trimmed);
+  if (!Number.isNaN(nativeParsed.getTime())) return nativeParsed;
+
+  const mdyMatch = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})(?:\s+.*)?$/);
+  if (mdyMatch) {
+    const month = Number(mdyMatch[1]);
+    const day = Number(mdyMatch[2]);
+    const yearPart = Number(mdyMatch[3]);
+    const year = yearPart < 100 ? 2000 + yearPart : yearPart;
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const ymdMatch = trimmed.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:\s+.*)?$/);
+  if (ymdMatch) {
+    const year = Number(ymdMatch[1]);
+    const month = Number(ymdMatch[2]);
+    const day = Number(ymdMatch[3]);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  return null;
+};
+
+export const inferSessionDateFromRows = (rows: Record<string, string>[]): SessionDateCandidate | null => {
+  for (const row of rows) {
+    const dateKey = findKeyByAliases(row, keyAliases.sessionDate);
+    if (!dateKey) continue;
+    const parsed = parseCsvDateCandidate(row[dateKey]);
+    if (!parsed) continue;
+    return { isoDate: parsed.toISOString() };
+  }
+
+  return null;
+};
+
 const getClubFamily = (clubType: string): GappingRow['family'] => {
   const normalized = clubType.trim().toLowerCase();
   if (wedgeOrder.includes(normalized) || normalized.includes('wedge')) return 'wedge';
@@ -349,14 +409,14 @@ export const buildGappingLadder = (summary: SessionSummary): GappingLadder => {
         overlapYds = Math.max(0, Math.round((next.p90CarryYds - current.p10CarryYds) * 10) / 10);
       }
 
-      gapStatus = classifyGap(getClubFamily(current.name), gapToNextYds);
+      gapStatus = classifyGap(getClubFamily(current.clubType), gapToNextYds);
       warning = buildGapWarning(gapStatus, current.displayName, next.displayName, gapToNextYds, overlapYds);
     }
 
     rows.push({
       club: current.name,
       displayClub: current.displayName,
-      family: getClubFamily(current.name),
+      family: getClubFamily(current.clubType),
       medianCarryYds: current.ladderCarryYds as number,
       p10CarryYds: current.p10CarryYds,
       p90CarryYds: current.p90CarryYds,
@@ -500,7 +560,7 @@ const markCarryOutliers = (shots: ShotRecord[]) => {
   const byClub = new Map<string, ShotRecord[]>();
 
   for (const shot of shots) {
-    const key = shot.clubType || 'Unknown';
+    const key = getShotGroupingKey(shot);
     const list = byClub.get(key) ?? [];
     list.push(shot);
     byClub.set(key, list);
@@ -604,7 +664,14 @@ export const buildImportReport = (rows: Record<string, string>[], shots: ShotRec
     .map((entry) => entry.field)
     .sort();
 
-  const clubsDetected = Array.from(new Set(shots.map((s) => s.clubType))).sort();
+  const clubsDetected = Array.from(
+    new Set(
+      shots.map((shot) => {
+        const normalizedModel = normalizeClubModel(shot.clubModel);
+        return normalizedModel ? `${shot.clubType} (${shot.clubModel})` : shot.clubType;
+      })
+    )
+  ).sort();
   const outlierRows = shots.filter((s) => s.isOutlier).length;
 
   const warnings: string[] = [];
@@ -630,7 +697,7 @@ export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {
   const grouped = new Map<string, ShotRecord[]>();
 
   for (const shot of shots) {
-    const key = shot.clubType || 'Unknown';
+    const key = getShotGroupingKey(shot);
     const existing = grouped.get(key) ?? [];
     existing.push(shot);
     grouped.set(key, existing);
@@ -643,9 +710,13 @@ export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {
     avgLaunchAngleDeg: avg(shots.map((s) => s.launchAngleDeg)),
     avgSpinRpm: avg(shots.map((s) => s.spinRpm)),
     clubs: Array.from(grouped.entries())
-      .map(([name, list]) => ({
+      .map(([name, list]) => {
+        const clubType = list[0]?.clubType ?? 'Unknown';
+        const primaryModel = list[0]?.clubModel ?? null;
+        return {
         name,
-        displayName: list.find((shot) => shot.clubName)?.displayClub ?? name,
+        clubType,
+        displayName: primaryModel ? `${clubType} (${primaryModel})` : list.find((shot) => shot.clubName)?.displayClub ?? clubType,
         shotLabels: Array.from(new Set(list.map((shot) => shot.clubName).filter((v): v is string => Boolean(v)))),
         modelLabels: Array.from(new Set(list.map((shot) => shot.clubModel).filter((v): v is string => Boolean(v)))),
         shots: list.length,
@@ -655,7 +726,12 @@ export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {
         p90CarryYds: roundedQuantile(list.map((s) => s.carryYds), 0.9),
         carryStdDevYds: stdDev(list.map((s) => s.carryYds)),
         offlineStdDevYds: stdDev(list.map((s) => s.sideYds))
-      }))
-      .sort((a, b) => compareClubTypeOrder(a.name, b.name))
+      };
+      })
+      .sort((a, b) => {
+        const typeComparison = compareClubTypeOrder(a.clubType, b.clubType);
+        if (typeComparison !== 0) return typeComparison;
+        return a.displayName.localeCompare(b.displayName);
+      })
   };
 };
