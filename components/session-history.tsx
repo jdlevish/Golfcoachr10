@@ -8,6 +8,7 @@ import type { CoachV2Plan } from '@/types/coach';
 type SessionListItem = {
   id: string;
   sourceFile: string | null;
+  sessionDate: string;
   importedAt: string;
   shots: number;
   avgCarryYds: number | null;
@@ -18,6 +19,7 @@ type SessionListItem = {
 type SessionDetail = {
   id: string;
   sourceFile: string | null;
+  sessionDate: string;
   importedAt: string;
   summary: SessionSummary;
   gappingLadder: GappingLadder;
@@ -139,6 +141,8 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
   const [showAllTime, setShowAllTime] = useState(true);
   const [showSavedSessions, setShowSavedSessions] = useState(true);
   const [showSessionDetail, setShowSessionDetail] = useState(true);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+  const [localRefreshKey, setLocalRefreshKey] = useState(0);
 
   useEffect(() => {
     const load = async () => {
@@ -169,7 +173,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
     };
 
     void load();
-  }, [refreshKey, timeWindow]);
+  }, [refreshKey, timeWindow, localRefreshKey]);
 
   const loadSession = async (sessionId: string) => {
     setLoadingSessionId(sessionId);
@@ -187,6 +191,26 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
       setDrillName(payload.coachV2Plan.practicePlan.steps[0].title);
     }
     setLoadingSessionId(null);
+  };
+
+  const deleteSession = async (sessionId: string) => {
+    const confirmed = window.confirm('Delete this range session from history?');
+    if (!confirmed) return;
+
+    setDeletingSessionId(sessionId);
+    setError(null);
+    const response = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+    if (!response.ok) {
+      setDeletingSessionId(null);
+      setError('Could not delete session.');
+      return;
+    }
+
+    if (selectedSession?.id === sessionId) {
+      setSelectedSession(null);
+    }
+    setDeletingSessionId(null);
+    setLocalRefreshKey((value) => value + 1);
   };
 
   const saveProfile = async () => {
@@ -574,15 +598,24 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
             <tbody>
               {sessions.map((entry) => (
                 <tr key={entry.id}>
-                  <td data-label="Date">{formatDateTime(entry.importedAt)}</td>
+                    <td data-label="Date">{formatDateTime(entry.sessionDate)}</td>
                   <td data-label="Source File">{entry.sourceFile ?? '-'}</td>
                   <td data-label="Shots">{entry.shots}</td>
                   <td data-label="Avg Carry">{formatNumber(entry.avgCarryYds, ' yds')}</td>
-                  <td data-label="Action">
-                    <button type="button" onClick={() => void loadSession(entry.id)} disabled={loadingSessionId === entry.id}>
-                      {loadingSessionId === entry.id ? 'Loading...' : 'Open'}
-                    </button>
-                  </td>
+                    <td data-label="Action">
+                      <div className="row-actions">
+                        <button type="button" onClick={() => void loadSession(entry.id)} disabled={loadingSessionId === entry.id}>
+                          {loadingSessionId === entry.id ? 'Loading...' : 'Open'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void deleteSession(entry.id)}
+                          disabled={deletingSessionId === entry.id}
+                        >
+                          {deletingSessionId === entry.id ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </div>
+                    </td>
                 </tr>
               ))}
             </tbody>
@@ -597,7 +630,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
           onToggle={() => setShowSessionDetail((value) => !value)}
         >
           <p>
-            {formatDateTime(selectedSession.importedAt)} |{' '}
+            {formatDateTime(selectedSession.sessionDate)} |{' '}
             {selectedSession.sourceFile ?? 'Unknown source'}
           </p>
           <p>

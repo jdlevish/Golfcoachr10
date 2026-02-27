@@ -4,7 +4,8 @@ import type { ShotRecord } from '@/lib/r10';
 export type StoredShot = Omit<ShotRecord, 'raw'>;
 
 export type StoredSessionPayload = {
-  version: 1;
+  version: number;
+  sessionDate?: string;
   shots: StoredShot[];
 };
 
@@ -24,7 +25,8 @@ export const storedShotSchema = z.object({
 });
 
 export const storedSessionPayloadSchema = z.object({
-  version: z.literal(1),
+  version: z.number().int().positive(),
+  sessionDate: z.string().datetime().optional(),
   shots: z.array(storedShotSchema)
 });
 

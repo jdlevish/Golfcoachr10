@@ -43,6 +43,11 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 
   const shots = toShotRecords(payload.shots);
+  const parsedSessionDate =
+    payload.sessionDate && !Number.isNaN(new Date(payload.sessionDate).getTime())
+      ? new Date(payload.sessionDate)
+      : null;
+  const effectiveDate = parsedSessionDate ?? entry.importedAt;
   const summary = summarizeSession(shots);
   const gappingLadder = buildGappingLadder(summary);
   const coachPlan = buildCoachPlan(summary, gappingLadder);
@@ -89,6 +94,7 @@ export async function GET(_request: Request, context: RouteContext) {
   return NextResponse.json({
     id: entry.id,
     sourceFile: entry.sourceFile,
+    sessionDate: effectiveDate.toISOString(),
     importedAt: entry.importedAt,
     shots,
     summary,
@@ -98,4 +104,26 @@ export async function GET(_request: Request, context: RouteContext) {
     trendDeltas,
     ruleInsights
   });
+}
+
+export async function DELETE(_request: Request, context: RouteContext) {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const sessionId = context.params.sessionId;
+  const deleted = await prisma.shotSession.deleteMany({
+    where: {
+      id: sessionId,
+      userId
+    }
+  });
+
+  if (deleted.count === 0) {
+    return NextResponse.json({ error: 'Session not found.' }, { status: 404 });
+  }
+
+  return NextResponse.json({ ok: true });
 }
