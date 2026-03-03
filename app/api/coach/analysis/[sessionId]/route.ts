@@ -43,7 +43,7 @@ export async function POST(_request: Request, context: RouteContext) {
   const shots = toShotRecords(payload.shots);
   const summary = summarizeSession(shots);
   const gappingLadder = buildGappingLadder(summary);
-  const coachV2Plan = buildCoachV2Plan(summary, gappingLadder, { sessionsAnalyzed: 1 });
+  const coachV2Plan = buildCoachV2Plan(summary, gappingLadder, { sessionsAnalyzed: 1, shots });
   const peerSessions = await prisma.shotSession.findMany({
     where: {
       userId,

@@ -51,7 +51,7 @@ export async function GET(_request: Request, context: RouteContext) {
   const summary = summarizeSession(shots);
   const gappingLadder = buildGappingLadder(summary);
   const coachPlan = buildCoachPlan(summary, gappingLadder);
-  const coachV2Plan = buildCoachV2Plan(summary, gappingLadder, { sessionsAnalyzed: 1 });
+  const coachV2Plan = buildCoachV2Plan(summary, gappingLadder, { sessionsAnalyzed: 1, shots });
   const peerSessions = await prisma.shotSession.findMany({
     where: {
       userId,

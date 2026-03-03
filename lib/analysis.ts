@@ -9,6 +9,11 @@ const RULE_MIN_TOP_CLUB_SHOTS = 8;
 const RULE_TOP_CLUB_OFFLINE_STD = 15;
 const RULE_SPEED_CARRY_CORRELATION = 0.55;
 const RULE_FATIGUE_MULTIPLIER = 1.2;
+const RULE_FACE_TO_PATH_ABS_DEG = 3.5;
+const RULE_CLUB_PATH_STD_DEG = 4.5;
+const RULE_SMASH_STD = 0.09;
+const RULE_ATTACK_ANGLE_STD_DEG = 3.5;
+const RULE_LAUNCH_DIRECTION_STD_DEG = 6.5;
 
 export type DrillMemoryLog = {
   constraintKey: string | null;
@@ -249,7 +254,85 @@ export const buildRuleInsights = (
     });
   }
 
-  const latestCoach = buildCoachV2Plan(summary, ladder, { sessionsAnalyzed: 1 });
+  const faceToPathValues = shots
+    .map((shot) => shot.faceToPathDeg)
+    .filter((value): value is number => value !== null);
+  if (faceToPathValues.length >= 12) {
+    const avgAbsFaceToPath =
+      faceToPathValues.reduce((sum, value) => sum + Math.abs(value), 0) / faceToPathValues.length;
+    if (avgAbsFaceToPath >= RULE_FACE_TO_PATH_ABS_DEG) {
+      insights.push({
+        id: 'face-to-path-bias',
+        severity: avgAbsFaceToPath >= RULE_FACE_TO_PATH_ABS_DEG + 1.5 ? 'danger' : 'warning',
+        title: 'Face-to-path mismatch',
+        ifThen: 'If face-to-path stays wide, then start line and curve control will stay inconsistent.',
+        evidence: `Average |face-to-path| is ${round1(avgAbsFaceToPath)} deg across ${faceToPathValues.length} shot(s).`,
+        action: 'Run a 20-ball face-control block with one stock shot shape and monitor face-to-path every 5 balls.'
+      });
+    }
+  }
+
+  const clubPathValues = shots
+    .map((shot) => shot.clubPathDeg)
+    .filter((value): value is number => value !== null);
+  const clubPathStd = stdDev(clubPathValues);
+  if (clubPathStd !== null && clubPathValues.length >= 12 && clubPathStd >= RULE_CLUB_PATH_STD_DEG) {
+    insights.push({
+      id: 'club-path-variability',
+      severity: clubPathStd >= RULE_CLUB_PATH_STD_DEG + 1.5 ? 'danger' : 'warning',
+      title: 'Club-path variability',
+      ifThen: 'If club path varies swing-to-swing, then directional dispersion and strike quality both degrade.',
+      evidence: `Club path std dev is ${round1(clubPathStd)} deg across ${clubPathValues.length} shot(s).`,
+      action: 'Use an alignment-stick path gate and keep the same setup/checkpoint routine for a 15-ball set.'
+    });
+  }
+
+  const smashValues = shots
+    .map((shot) => shot.smashFactor)
+    .filter((value): value is number => value !== null);
+  const smashStd = stdDev(smashValues);
+  if (smashStd !== null && smashValues.length >= 12 && smashStd >= RULE_SMASH_STD) {
+    insights.push({
+      id: 'smash-variability',
+      severity: smashStd >= RULE_SMASH_STD + 0.03 ? 'danger' : 'warning',
+      title: 'Strike-efficiency volatility',
+      ifThen: 'If smash factor swings, then carry control and contact quality will remain unstable.',
+      evidence: `Smash factor std dev is ${round1(smashStd)} across ${smashValues.length} shot(s).`,
+      action: 'Prioritize centered-contact drills before speed work, then retest smash stability over 10 balls.'
+    });
+  }
+
+  const attackAngleValues = shots
+    .map((shot) => shot.attackAngleDeg)
+    .filter((value): value is number => value !== null);
+  const attackAngleStd = stdDev(attackAngleValues);
+  if (attackAngleStd !== null && attackAngleValues.length >= 12 && attackAngleStd >= RULE_ATTACK_ANGLE_STD_DEG) {
+    insights.push({
+      id: 'attack-angle-variability',
+      severity: 'warning',
+      title: 'Attack-angle variability',
+      ifThen: 'If attack angle fluctuates too much, then launch and spin windows are hard to control.',
+      evidence: `Attack angle std dev is ${round1(attackAngleStd)} deg across ${attackAngleValues.length} shot(s).`,
+      action: 'Use low-point control reps and keep ball position/setup constant for your next 12-ball block.'
+    });
+  }
+
+  const launchDirectionValues = shots
+    .map((shot) => shot.launchDirectionDeg)
+    .filter((value): value is number => value !== null);
+  const launchDirectionStd = stdDev(launchDirectionValues);
+  if (launchDirectionStd !== null && launchDirectionValues.length >= 12 && launchDirectionStd >= RULE_LAUNCH_DIRECTION_STD_DEG) {
+    insights.push({
+      id: 'launch-direction-variability',
+      severity: 'warning',
+      title: 'Launch-direction spread',
+      ifThen: 'If launch direction is inconsistent, then directional misses will remain unpredictable.',
+      evidence: `Launch direction std dev is ${round1(launchDirectionStd)} deg across ${launchDirectionValues.length} shot(s).`,
+      action: 'Add a start-line gate drill and only progress once launch direction stabilizes.'
+    });
+  }
+
+  const latestCoach = buildCoachV2Plan(summary, ladder, { sessionsAnalyzed: 1, shots });
   const primaryKey = latestCoach?.primaryConstraint.key ?? null;
   const matchingDrills = primaryKey
     ? drillLogs.filter((log) => log.constraintKey === primaryKey && typeof log.perceivedOutcome === 'number')

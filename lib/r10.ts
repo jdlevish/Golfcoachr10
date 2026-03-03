@@ -19,7 +19,18 @@ export type ShotRecord = {
   /** UI label preferring user nickname when present. */
   displayClub: string;
   ballSpeedMph: number | null;
+  clubSpeedMph: number | null;
   launchAngleDeg: number | null;
+  clubPathDeg: number | null;
+  faceToPathDeg: number | null;
+  faceAngleDeg: number | null;
+  attackAngleDeg: number | null;
+  launchDirectionDeg: number | null;
+  spinAxisDeg: number | null;
+  backspinRpm: number | null;
+  sidespinRpm: number | null;
+  smashFactor: number | null;
+  apexFt: number | null;
   carryYds: number | null;
   totalYds: number | null;
   sideYds: number | null;
@@ -112,7 +123,18 @@ const keyAliases: Record<
   | 'clubModel'
   | 'sessionDate'
   | 'ballSpeedMph'
+  | 'clubSpeedMph'
   | 'launchAngleDeg'
+  | 'clubPathDeg'
+  | 'faceToPathDeg'
+  | 'faceAngleDeg'
+  | 'attackAngleDeg'
+  | 'launchDirectionDeg'
+  | 'spinAxisDeg'
+  | 'backspinRpm'
+  | 'sidespinRpm'
+  | 'smashFactor'
+  | 'apexFt'
   | 'carryYds'
   | 'totalYds'
   | 'sideYds'
@@ -124,7 +146,18 @@ const keyAliases: Record<
   clubModel: ['brand/model', 'brand model'],
   sessionDate: ['date', 'session date', 'shot date', 'timestamp', 'time', 'datetime', 'date time'],
   ballSpeedMph: ['ball speed', 'ball speed (mph)'],
+  clubSpeedMph: ['club speed', 'club speed (mph)', 'head speed', 'head speed (mph)'],
   launchAngleDeg: ['launch angle', 'launch angle (deg)'],
+  clubPathDeg: ['club path', 'club path (deg)', 'path', 'path (deg)'],
+  faceToPathDeg: ['face to path', 'face-to-path', 'face to path (deg)', 'face to path deg'],
+  faceAngleDeg: ['face angle', 'face angle (deg)', 'face', 'face (deg)', 'club face', 'club face (deg)'],
+  attackAngleDeg: ['attack angle', 'attack angle (deg)', 'angle of attack', 'aoa'],
+  launchDirectionDeg: ['launch direction', 'launch direction (deg)'],
+  spinAxisDeg: ['spin axis', 'spin axis (deg)'],
+  backspinRpm: ['backspin', 'backspin (rpm)'],
+  sidespinRpm: ['sidespin', 'sidespin (rpm)'],
+  smashFactor: ['smash factor', 'smash'],
+  apexFt: ['apex', 'apex height', 'height', 'peak height', 'max height', 'apex (ft)', 'height (ft)'],
   carryYds: ['carry', 'carry distance', 'carry (yds)', 'carry (yards)', 'carry distance (yd)', 'carry distance (yds)', 'carry yd', 'carry yds'],
   totalYds: ['total', 'total distance', 'total (yds)', 'total (yards)'],
   sideYds: ['side', 'side distance', 'side (yds)', 'carry deviation distance'],
@@ -612,7 +645,18 @@ export const mapRowsToShots = (rows: Record<string, string>[]): ShotRecord[] => 
       clubModel,
       displayClub: clubName ? `${clubType} (${clubName})` : clubType,
       ballSpeedMph: numeric(row[findKeyByAliases(row, keyAliases.ballSpeedMph) ?? '']),
+      clubSpeedMph: numeric(row[findKeyByAliases(row, keyAliases.clubSpeedMph) ?? '']),
       launchAngleDeg: numeric(row[findKeyByAliases(row, keyAliases.launchAngleDeg) ?? '']),
+      clubPathDeg: numeric(row[findKeyByAliases(row, keyAliases.clubPathDeg) ?? '']),
+      faceToPathDeg: numeric(row[findKeyByAliases(row, keyAliases.faceToPathDeg) ?? '']),
+      faceAngleDeg: numeric(row[findKeyByAliases(row, keyAliases.faceAngleDeg) ?? '']),
+      attackAngleDeg: numeric(row[findKeyByAliases(row, keyAliases.attackAngleDeg) ?? '']),
+      launchDirectionDeg: numeric(row[findKeyByAliases(row, keyAliases.launchDirectionDeg) ?? '']),
+      spinAxisDeg: numeric(row[findKeyByAliases(row, keyAliases.spinAxisDeg) ?? '']),
+      backspinRpm: numeric(row[findKeyByAliases(row, keyAliases.backspinRpm) ?? '']),
+      sidespinRpm: numeric(row[findKeyByAliases(row, keyAliases.sidespinRpm) ?? '']),
+      smashFactor: numeric(row[findKeyByAliases(row, keyAliases.smashFactor) ?? '']),
+      apexFt: numeric(row[findKeyByAliases(row, keyAliases.apexFt) ?? '']),
       carryYds: numeric(row[findKeyByAliases(row, keyAliases.carryYds) ?? '']),
       totalYds: numeric(row[findKeyByAliases(row, keyAliases.totalYds) ?? '']),
       sideYds: numeric(row[findKeyByAliases(row, keyAliases.sideYds) ?? '']),
@@ -632,7 +676,18 @@ export const mapRowsToShots = (rows: Record<string, string>[]): ShotRecord[] => 
 
     const hasAnyCoreMetric =
       shot.ballSpeedMph !== null ||
+      shot.clubSpeedMph !== null ||
       shot.launchAngleDeg !== null ||
+      shot.clubPathDeg !== null ||
+      shot.faceToPathDeg !== null ||
+      shot.faceAngleDeg !== null ||
+      shot.attackAngleDeg !== null ||
+      shot.launchDirectionDeg !== null ||
+      shot.spinAxisDeg !== null ||
+      shot.backspinRpm !== null ||
+      shot.sidespinRpm !== null ||
+      shot.smashFactor !== null ||
+      shot.apexFt !== null ||
       shot.carryYds !== null ||
       shot.totalYds !== null ||
       shot.sideYds !== null ||

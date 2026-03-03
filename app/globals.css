@@ -128,6 +128,27 @@ input[type='file'] {
   font-size: 0.95rem;
 }
 
+.term-key {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  margin: 0.6rem 0 0.8rem;
+  background: var(--panel-bg);
+}
+
+.term-key summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.term-key ul {
+  margin: 0.6rem 0 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
 .summary-grid h3 {
   margin: 0;
   font-size: 0.95rem;
@@ -324,6 +345,113 @@ td {
   margin-bottom: 0.9rem;
 }
 
+.full-range-data {
+  display: grid;
+  gap: 0.8rem;
+  margin: 0.8rem 0 1rem;
+}
+
+.full-range-controls {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.full-range-controls select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.metrics-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 0.9rem;
+  align-items: center;
+}
+
+.metrics-picker label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.sort-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+}
+
+.sort-controls select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.35rem 0.5rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.viz-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.viz-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem;
+  background: var(--card-bg);
+}
+
+.viz-card h3 {
+  margin: 0 0 0.5rem;
+}
+
+.viz-card svg {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 75%, transparent);
+}
+
+.viz-card.large {
+  grid-column: 1 / -1;
+}
+
+.viz-card.large svg {
+  height: 360px;
+}
+
+.viz-toolbar {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.viz-toolbar > div {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.viz-toolbar select,
+.viz-toolbar button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.35rem 0.5rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
 .window-button.active {
   background: var(--accent-strong);
   border-color: var(--accent);
@@ -434,5 +562,24 @@ td {
   .time-window-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
+  }
+
+  .full-range-controls {
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .metrics-picker {
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .sort-controls {
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .viz-card.large svg {
+    height: 260px;
   }
 }

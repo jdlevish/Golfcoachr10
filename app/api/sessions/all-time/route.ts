@@ -104,7 +104,8 @@ export async function GET(request: Request) {
   const gappingLadder = buildGappingLadder(summary);
   const coachPlan = buildCoachPlan(summary, gappingLadder);
   const coachV2Plan = buildCoachV2Plan(summary, gappingLadder, {
-    sessionsAnalyzed: parsedSessions.length
+    sessionsAnalyzed: parsedSessions.length,
+    shots: allShots
   });
   const latestSession = parsedSessions[0] ?? null;
   const baselineSessions = parsedSessions.slice(1);
