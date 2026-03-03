@@ -1,12 +1,37 @@
 :root {
-  color-scheme: light dark;
-  --bg: #0f172a;
-  --surface: #1e293b;
-  --surface-soft: #334155;
-  --text: #f8fafc;
-  --muted: #cbd5e1;
-  --border: #475569;
+  color-scheme: dark;
+  --bg: #0a0a0a;
+  --surface: #141414;
+  --surface-soft: #1f1f1f;
+  --text: #ffffff;
+  --muted: #d1d5db;
+  --border: #2f2f2f;
   --error: #fca5a5;
+  --accent: #ff6a00;
+  --accent-soft: rgba(255, 106, 0, 0.16);
+  --accent-strong: rgba(255, 106, 0, 0.35);
+  --accent-glow: #ff6a00;
+  --panel-bg: rgba(20, 20, 20, 0.82);
+  --card-bg: rgba(24, 24, 24, 0.88);
+  --table-row-bg: rgba(24, 24, 24, 0.95);
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f3f4f6;
+  --surface: #ffffff;
+  --surface-soft: #e5e7eb;
+  --text: #111827;
+  --muted: #4b5563;
+  --border: #d1d5db;
+  --error: #b91c1c;
+  --accent: #2563eb;
+  --accent-soft: rgba(37, 99, 235, 0.12);
+  --accent-strong: rgba(37, 99, 235, 0.3);
+  --accent-glow: #93c5fd;
+  --panel-bg: rgba(255, 255, 255, 0.82);
+  --card-bg: rgba(255, 255, 255, 0.9);
+  --table-row-bg: rgba(255, 255, 255, 0.95);
 }
 
 * {
@@ -16,9 +41,13 @@
 body {
   margin: 0;
   font-family: Inter, system-ui, sans-serif;
-  background: radial-gradient(circle at top, #1d4ed8, var(--bg) 35%);
+  background: radial-gradient(circle at top, var(--accent-glow), var(--bg) 35%);
   color: var(--text);
   line-height: 1.45;
+}
+
+[data-theme='light'] body {
+  background: radial-gradient(circle at top, var(--accent-glow), var(--bg) 30%);
 }
 
 .page {
@@ -45,7 +74,7 @@ body {
   border: 1px dashed var(--border);
   border-radius: 12px;
   padding: 1rem;
-  background: rgba(15, 23, 42, 0.45);
+  background: var(--panel-bg);
 }
 
 input[type='file'] {
@@ -62,14 +91,14 @@ input[type='file'] {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 0.75rem;
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--card-bg);
 }
 
 .diagnostics {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 0.9rem;
-  background: rgba(15, 23, 42, 0.55);
+  background: var(--panel-bg);
 }
 
 .diagnostics h2 {
@@ -179,7 +208,7 @@ td {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 0.9rem;
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--card-bg);
 }
 
 .coach-card h2,
@@ -197,7 +226,7 @@ td {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 0.9rem;
-  background: rgba(15, 23, 42, 0.55);
+  background: var(--panel-bg);
 }
 
 .auth-form {
@@ -215,7 +244,7 @@ td {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.55rem 0.65rem;
-  background: rgba(15, 23, 42, 0.45);
+  background: var(--surface);
   color: var(--text);
 }
 
@@ -224,7 +253,7 @@ td {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.55rem 0.8rem;
-  background: rgba(59, 130, 246, 0.18);
+  background: var(--accent-soft);
   color: var(--text);
   font-weight: 600;
   cursor: pointer;
@@ -242,6 +271,20 @@ td {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.theme-toggle {
+  position: fixed;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 20;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.45rem 0.75rem;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .row-actions {
@@ -268,7 +311,7 @@ td {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.45rem 0.7rem;
-  background: rgba(59, 130, 246, 0.12);
+  background: var(--accent-soft);
   color: var(--text);
   font-weight: 600;
   cursor: pointer;
@@ -282,8 +325,8 @@ td {
 }
 
 .window-button.active {
-  background: rgba(59, 130, 246, 0.35);
-  border-color: #60a5fa;
+  background: var(--accent-strong);
+  border-color: var(--accent);
 }
 
 @media (max-width: 900px) {
@@ -303,8 +346,15 @@ td {
 }
 
 @media (max-width: 640px) {
+  .theme-toggle {
+    top: 0.5rem;
+    right: 0.5rem;
+    font-size: 0.85rem;
+    padding: 0.4rem 0.65rem;
+  }
+
   .page {
-    padding: 1.25rem 0.75rem 2rem;
+    padding: 2.8rem 0.75rem 2rem;
   }
 
   h1 {
@@ -358,7 +408,7 @@ td {
     border-radius: 10px;
     padding: 0.45rem 0.55rem;
     margin-bottom: 0.55rem;
-    background: rgba(15, 23, 42, 0.35);
+    background: var(--table-row-bg);
   }
 
   td {
