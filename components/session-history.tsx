@@ -1,7 +1,7 @@
 'use client';
 
-import { type ReactNode, useEffect, useState } from 'react';
-import type { CoachPlan, GappingLadder, SessionSummary } from '@/lib/r10';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import type { CoachPlan, GappingLadder, SessionSummary, ShotRecord } from '@/lib/r10';
 import type { RuleInsight, TrendDeltas } from '@/types/analysis';
 import type { CoachV2Plan } from '@/types/coach';
 
@@ -21,6 +21,7 @@ type SessionDetail = {
   sourceFile: string | null;
   sessionDate: string;
   importedAt: string;
+  shots: ShotRecord[];
   summary: SessionSummary;
   gappingLadder: GappingLadder;
   coachPlan: CoachPlan | null;
@@ -92,6 +93,108 @@ const formatTrendDelta = (delta: number | null, unit: string) => {
   const sign = delta > 0 ? '+' : '';
   return `${sign}${delta.toFixed(1)} ${unit}`;
 };
+const formatValue = (value: number | null, suffix = '') => (value === null ? '-' : `${value.toFixed(1)}${suffix}`);
+
+type MetricKey =
+  | 'carryYds'
+  | 'totalYds'
+  | 'ballSpeedMph'
+  | 'clubSpeedMph'
+  | 'launchAngleDeg'
+  | 'spinRpm'
+  | 'sideYds'
+  | 'clubPathDeg'
+  | 'faceToPathDeg'
+  | 'faceAngleDeg'
+  | 'attackAngleDeg'
+  | 'launchDirectionDeg'
+  | 'spinAxisDeg'
+  | 'backspinRpm'
+  | 'sidespinRpm'
+  | 'smashFactor'
+  | 'apexFt';
+
+const metricConfig: Record<MetricKey, { label: string; suffix: string; read: (shot: ShotRecord) => number | null }> = {
+  carryYds: { label: 'Carry', suffix: ' yds', read: (shot) => shot.carryYds },
+  totalYds: { label: 'Total', suffix: ' yds', read: (shot) => shot.totalYds },
+  ballSpeedMph: { label: 'Ball Speed', suffix: ' mph', read: (shot) => shot.ballSpeedMph },
+  clubSpeedMph: { label: 'Club Speed', suffix: ' mph', read: (shot) => shot.clubSpeedMph },
+  launchAngleDeg: { label: 'Launch', suffix: ' deg', read: (shot) => shot.launchAngleDeg },
+  spinRpm: { label: 'Spin', suffix: ' rpm', read: (shot) => shot.spinRpm },
+  sideYds: { label: 'Side', suffix: ' yds', read: (shot) => shot.sideYds },
+  clubPathDeg: { label: 'Club Path', suffix: ' deg', read: (shot) => shot.clubPathDeg },
+  faceToPathDeg: { label: 'Face To Path', suffix: ' deg', read: (shot) => shot.faceToPathDeg },
+  faceAngleDeg: { label: 'Club Face', suffix: ' deg', read: (shot) => shot.faceAngleDeg },
+  attackAngleDeg: { label: 'Attack Angle', suffix: ' deg', read: (shot) => shot.attackAngleDeg },
+  launchDirectionDeg: { label: 'Launch Direction', suffix: ' deg', read: (shot) => shot.launchDirectionDeg },
+  spinAxisDeg: { label: 'Spin Axis', suffix: ' deg', read: (shot) => shot.spinAxisDeg },
+  backspinRpm: { label: 'Backspin', suffix: ' rpm', read: (shot) => shot.backspinRpm },
+  sidespinRpm: { label: 'Sidespin', suffix: ' rpm', read: (shot) => shot.sidespinRpm },
+  smashFactor: { label: 'Smash Factor', suffix: '', read: (shot) => shot.smashFactor },
+  apexFt: { label: 'Apex', suffix: ' ft', read: (shot) => shot.apexFt }
+};
+
+const metricKeys = Object.keys(metricConfig) as MetricKey[];
+
+const minMax = (values: Array<number | null>) => {
+  const numbers = values.filter((value): value is number => typeof value === 'number');
+  if (!numbers.length) return { min: null, max: null };
+  return { min: Math.min(...numbers), max: Math.max(...numbers) };
+};
+
+const buildLinePoints = (values: Array<number | null>, width = 520, height = 160) => {
+  const valid = values
+    .map((value, index) => ({ value, index }))
+    .filter((entry): entry is { value: number; index: number } => typeof entry.value === 'number');
+  if (valid.length < 2) return null;
+
+  const valueRange = valid.reduce(
+    (acc, entry) => ({
+      min: Math.min(acc.min, entry.value),
+      max: Math.max(acc.max, entry.value)
+    }),
+    { min: Number.POSITIVE_INFINITY, max: Number.NEGATIVE_INFINITY }
+  );
+  const span = Math.max(1, valueRange.max - valueRange.min);
+  const maxIndex = Math.max(1, values.length - 1);
+
+  return valid
+    .map((entry) => {
+      const x = (entry.index / maxIndex) * width;
+      const y = height - ((entry.value - valueRange.min) / span) * height;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+};
+
+const buildScatterPoints = (
+  shots: ShotRecord[],
+  xMetric: MetricKey,
+  yMetric: MetricKey,
+  width = 520,
+  height = 220
+): Array<{ x: number; y: number; isOutlier: boolean }> => {
+  const valid = shots.filter(
+    (shot): shot is ShotRecord =>
+      typeof metricConfig[xMetric].read(shot) === 'number' && typeof metricConfig[yMetric].read(shot) === 'number'
+  );
+  if (!valid.length) return [];
+
+  const xValues = valid.map((shot) => metricConfig[xMetric].read(shot) as number);
+  const yValues = valid.map((shot) => metricConfig[yMetric].read(shot) as number);
+  const xMin = Math.min(...xValues);
+  const xMax = Math.max(...xValues);
+  const yMin = Math.min(...yValues);
+  const yMax = Math.max(...yValues);
+  const xSpan = Math.max(1, xMax - xMin);
+  const ySpan = Math.max(1, yMax - yMin);
+
+  return valid.map((shot) => ({
+    x: (((metricConfig[xMetric].read(shot) as number) - xMin) / xSpan) * width,
+    y: height - (((metricConfig[yMetric].read(shot) as number) - yMin) / ySpan) * height,
+    isOutlier: shot.isOutlier
+  }));
+};
 
 type CollapsibleSectionProps = {
   title: string;
@@ -141,8 +244,92 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
   const [showAllTime, setShowAllTime] = useState(true);
   const [showSavedSessions, setShowSavedSessions] = useState(true);
   const [showSessionDetail, setShowSessionDetail] = useState(true);
+  const [showFullRangeData, setShowFullRangeData] = useState(false);
+  const [fullDataClubFilter, setFullDataClubFilter] = useState<'all' | string>('all');
+  const [visibleMetrics, setVisibleMetrics] = useState<MetricKey[]>([
+    'carryYds',
+    'totalYds',
+    'ballSpeedMph',
+    'clubSpeedMph',
+    'launchAngleDeg',
+    'spinRpm',
+    'sideYds',
+    'clubPathDeg',
+    'faceToPathDeg',
+    'faceAngleDeg',
+    'attackAngleDeg',
+    'launchDirectionDeg',
+    'spinAxisDeg',
+    'backspinRpm',
+    'sidespinRpm',
+    'smashFactor',
+    'apexFt'
+  ]);
+  const [trendMetric, setTrendMetric] = useState<MetricKey>('carryYds');
+  const [scatterXMetric, setScatterXMetric] = useState<MetricKey>('sideYds');
+  const [scatterYMetric, setScatterYMetric] = useState<MetricKey>('carryYds');
+  const [expandedViz, setExpandedViz] = useState<'trend' | 'scatter' | null>(null);
+  const [shotSortMetric, setShotSortMetric] = useState<'shotIndex' | 'club' | 'outlier' | MetricKey>('shotIndex');
+  const [shotSortDirection, setShotSortDirection] = useState<'asc' | 'desc'>('asc');
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
+
+  const availableSessionClubs = useMemo(() => {
+    if (!selectedSession) return [];
+    return Array.from(new Set(selectedSession.shots.map((shot) => shot.displayClub))).sort((a, b) => a.localeCompare(b));
+  }, [selectedSession]);
+
+  const fullDataShots = useMemo(() => {
+    if (!selectedSession) return [];
+    if (fullDataClubFilter === 'all') return selectedSession.shots;
+    return selectedSession.shots.filter((shot) => shot.displayClub === fullDataClubFilter);
+  }, [fullDataClubFilter, selectedSession]);
+
+  const sortedFullDataShots = useMemo(() => {
+    const withIndex = fullDataShots.map((shot, index) => ({ shot, index }));
+
+    const compareNullable = (left: number | null, right: number | null) => {
+      if (left === null && right === null) return 0;
+      if (left === null) return 1;
+      if (right === null) return -1;
+      return left - right;
+    };
+
+    withIndex.sort((a, b) => {
+      let value = 0;
+      if (shotSortMetric === 'shotIndex') {
+        value = a.index - b.index;
+      } else if (shotSortMetric === 'club') {
+        value = a.shot.displayClub.localeCompare(b.shot.displayClub);
+      } else if (shotSortMetric === 'outlier') {
+        value = Number(a.shot.isOutlier) - Number(b.shot.isOutlier);
+      } else {
+        value = compareNullable(metricConfig[shotSortMetric].read(a.shot), metricConfig[shotSortMetric].read(b.shot));
+      }
+      return shotSortDirection === 'asc' ? value : -value;
+    });
+
+    return withIndex;
+  }, [fullDataShots, shotSortDirection, shotSortMetric]);
+
+  const fullDataRanges = useMemo(() => {
+    return visibleMetrics.reduce(
+      (acc, key) => {
+        acc[key] = minMax(fullDataShots.map((shot) => metricConfig[key].read(shot)));
+        return acc;
+      },
+      {} as Record<MetricKey, { min: number | null; max: number | null }>
+    );
+  }, [fullDataShots, visibleMetrics]);
+
+  const trendPoints = useMemo(
+    () => buildLinePoints(fullDataShots.map((shot) => metricConfig[trendMetric].read(shot))),
+    [fullDataShots, trendMetric]
+  );
+  const dispersionPoints = useMemo(
+    () => buildScatterPoints(fullDataShots, scatterXMetric, scatterYMetric),
+    [fullDataShots, scatterXMetric, scatterYMetric]
+  );
 
   useEffect(() => {
     const load = async () => {
@@ -175,6 +362,18 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
     void load();
   }, [refreshKey, timeWindow, localRefreshKey]);
 
+  useEffect(() => {
+    if (!visibleMetrics.includes(trendMetric)) {
+      setTrendMetric(visibleMetrics[0]);
+    }
+    if (!visibleMetrics.includes(scatterXMetric)) {
+      setScatterXMetric(visibleMetrics[0]);
+    }
+    if (!visibleMetrics.includes(scatterYMetric)) {
+      setScatterYMetric(visibleMetrics[0]);
+    }
+  }, [visibleMetrics, trendMetric, scatterXMetric, scatterYMetric]);
+
   const loadSession = async (sessionId: string) => {
     setLoadingSessionId(sessionId);
     setError(null);
@@ -187,6 +386,33 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
     const payload = (await response.json()) as SessionDetail;
     setSelectedSession(payload);
     setShowSessionDetail(true);
+    setShowFullRangeData(false);
+    setFullDataClubFilter('all');
+    setVisibleMetrics([
+      'carryYds',
+      'totalYds',
+      'ballSpeedMph',
+      'clubSpeedMph',
+      'launchAngleDeg',
+      'spinRpm',
+      'sideYds',
+      'clubPathDeg',
+      'faceToPathDeg',
+      'faceAngleDeg',
+      'attackAngleDeg',
+      'launchDirectionDeg',
+      'spinAxisDeg',
+      'backspinRpm',
+      'sidespinRpm',
+      'smashFactor',
+      'apexFt'
+    ]);
+    setTrendMetric('carryYds');
+    setScatterXMetric('sideYds');
+    setScatterYMetric('carryYds');
+    setExpandedViz(null);
+    setShotSortMetric('shotIndex');
+    setShotSortDirection('asc');
     if (payload.coachV2Plan?.practicePlan.steps[0]) {
       setDrillName(payload.coachV2Plan.practicePlan.steps[0].title);
     }
@@ -417,6 +643,32 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
           </section>
 
           <h3>Gapping Ladder</h3>
+          <details className="term-key">
+            <summary>Gapping Ladder Key</summary>
+            <ul>
+              <li>
+                <strong>Median Carry:</strong> Your middle carry value for that club.
+              </li>
+              <li>
+                <strong>P10-P90 Carry:</strong> Your typical carry band, from the 10th to 90th percentile.
+              </li>
+              <li>
+                <strong>Gap To Next:</strong> Distance difference to the next shorter club.
+              </li>
+              <li>
+                <strong>Healthy:</strong> Gap is in a normal playable range.
+              </li>
+              <li>
+                <strong>Compressed:</strong> Gap is smaller than ideal, clubs may overlap in distance.
+              </li>
+              <li>
+                <strong>Overlap:</strong> Gap is very small and club distances likely blend together.
+              </li>
+              <li>
+                <strong>Cliff:</strong> Gap is too large, leaving an unusable distance hole.
+              </li>
+            </ul>
+          </details>
           {allTime.gappingLadder.insights.length > 0 && (
             <ul className="insights-list">
               {allTime.gappingLadder.insights.map((insight) => (
@@ -641,6 +893,216 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
             Clubs tracked: {selectedSession.summary.clubs.length} | Gap alerts:{' '}
             {selectedSession.gappingLadder.rows.filter((row) => row.gapStatus === 'overlap' || row.gapStatus === 'cliff').length}
           </p>
+          <p>
+            <button type="button" onClick={() => setShowFullRangeData((value) => !value)}>
+              {showFullRangeData ? 'Hide Full Range Data' : 'Load Full Range Data'}
+            </button>
+          </p>
+          {showFullRangeData && (
+            <section className="full-range-data">
+              <div className="full-range-controls">
+                <label htmlFor="full-data-club-filter">Club filter</label>
+                <select
+                  id="full-data-club-filter"
+                  value={fullDataClubFilter}
+                  onChange={(event) => setFullDataClubFilter(event.target.value)}
+                >
+                  <option value="all">All clubs</option>
+                  {availableSessionClubs.map((club) => (
+                    <option key={club} value={club}>
+                      {club}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="metrics-picker" role="group" aria-label="Visible metrics">
+                <span>Visible metrics</span>
+                {metricKeys.map((key) => (
+                  <label key={key}>
+                    <input
+                      type="checkbox"
+                      checked={visibleMetrics.includes(key)}
+                      onChange={() =>
+                        setVisibleMetrics((current) => {
+                          const exists = current.includes(key);
+                          if (exists) {
+                            const next = current.filter((value) => value !== key);
+                            return next.length ? next : current;
+                          }
+                          return [...current, key];
+                        })
+                      }
+                    />
+                    {metricConfig[key].label}
+                  </label>
+                ))}
+              </div>
+              <div className="sort-controls">
+                <label htmlFor="shot-sort-metric">Sort shots by</label>
+                <select
+                  id="shot-sort-metric"
+                  value={shotSortMetric}
+                  onChange={(event) =>
+                    setShotSortMetric(event.target.value as 'shotIndex' | 'club' | 'outlier' | MetricKey)
+                  }
+                >
+                  <option value="shotIndex">Shot Order</option>
+                  <option value="club">Club</option>
+                  <option value="outlier">Outlier</option>
+                  {metricKeys.map((key) => (
+                    <option key={key} value={key}>
+                      {metricConfig[key].label}
+                    </option>
+                  ))}
+                </select>
+                <label htmlFor="shot-sort-direction">Direction</label>
+                <select
+                  id="shot-sort-direction"
+                  value={shotSortDirection}
+                  onChange={(event) => setShotSortDirection(event.target.value as 'asc' | 'desc')}
+                >
+                  <option value="asc">Ascending</option>
+                  <option value="desc">Descending</option>
+                </select>
+              </div>
+              <section className="summary-grid" aria-label="Full data ranges">
+                <article>
+                  <h3>Visible Shots</h3>
+                  <p>{fullDataShots.length}</p>
+                </article>
+                {visibleMetrics.map((key) => (
+                  <article key={key}>
+                    <h3>{metricConfig[key].label} Range</h3>
+                    <p>
+                      {formatValue(fullDataRanges[key].min, metricConfig[key].suffix)} -{' '}
+                      {formatValue(fullDataRanges[key].max, metricConfig[key].suffix)}
+                    </p>
+                  </article>
+                ))}
+              </section>
+
+              <div className="viz-grid">
+                <article className={expandedViz === 'trend' ? 'viz-card large' : 'viz-card'}>
+                  <div className="viz-toolbar">
+                    <h3>{metricConfig[trendMetric].label} By Shot</h3>
+                    <div>
+                      <label htmlFor="trend-metric">Metric</label>
+                      <select
+                        id="trend-metric"
+                        value={trendMetric}
+                        onChange={(event) => setTrendMetric(event.target.value as MetricKey)}
+                      >
+                        {visibleMetrics.map((key) => (
+                          <option key={key} value={key}>
+                            {metricConfig[key].label}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedViz((value) => (value === 'trend' ? null : 'trend'))}
+                      >
+                        {expandedViz === 'trend' ? 'Normal Size' : 'Enlarge'}
+                      </button>
+                    </div>
+                  </div>
+                  {trendPoints ? (
+                    <svg viewBox="0 0 520 160" role="img" aria-label="Carry by shot trend chart">
+                      <polyline points={trendPoints} fill="none" stroke="var(--accent)" strokeWidth={2.5} />
+                    </svg>
+                  ) : (
+                    <p className="helper-text">Not enough values for trend line.</p>
+                  )}
+                </article>
+                <article className={expandedViz === 'scatter' ? 'viz-card large' : 'viz-card'}>
+                  <div className="viz-toolbar">
+                    <h3>
+                      Scatter ({metricConfig[scatterXMetric].label} vs {metricConfig[scatterYMetric].label})
+                    </h3>
+                    <div>
+                      <label htmlFor="scatter-x">X</label>
+                      <select
+                        id="scatter-x"
+                        value={scatterXMetric}
+                        onChange={(event) => setScatterXMetric(event.target.value as MetricKey)}
+                      >
+                        {visibleMetrics.map((key) => (
+                          <option key={key} value={key}>
+                            {metricConfig[key].label}
+                          </option>
+                        ))}
+                      </select>
+                      <label htmlFor="scatter-y">Y</label>
+                      <select
+                        id="scatter-y"
+                        value={scatterYMetric}
+                        onChange={(event) => setScatterYMetric(event.target.value as MetricKey)}
+                      >
+                        {visibleMetrics.map((key) => (
+                          <option key={key} value={key}>
+                            {metricConfig[key].label}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedViz((value) => (value === 'scatter' ? null : 'scatter'))}
+                      >
+                        {expandedViz === 'scatter' ? 'Normal Size' : 'Enlarge'}
+                      </button>
+                    </div>
+                  </div>
+                  {dispersionPoints.length > 0 ? (
+                    <svg viewBox="0 0 520 220" role="img" aria-label="Dispersion scatter chart">
+                      {dispersionPoints.map((point, index) => (
+                        <circle
+                          key={`${point.x}-${point.y}-${index}`}
+                          cx={point.x}
+                          cy={point.y}
+                          r={3.2}
+                          fill={point.isOutlier ? '#f87171' : 'var(--accent)'}
+                        />
+                      ))}
+                    </svg>
+                  ) : (
+                    <p className="helper-text">Need both selected metric values to plot scatter.</p>
+                  )}
+                </article>
+              </div>
+
+              <h3>Individual Shots</h3>
+              {!sortedFullDataShots.length ? (
+                <p className="helper-text">No shots match this filter.</p>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Club</th>
+                      {visibleMetrics.map((key) => (
+                        <th key={key}>{metricConfig[key].label}</th>
+                      ))}
+                      <th>Outlier</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedFullDataShots.map(({ shot, index }) => (
+                      <tr key={`${shot.displayClub}-${index}-${shot.carryYds ?? 'na'}`}>
+                        <td data-label="#">{index + 1}</td>
+                        <td data-label="Club">{shot.displayClub}</td>
+                        {visibleMetrics.map((key) => (
+                          <td key={key} data-label={metricConfig[key].label}>
+                            {formatValue(metricConfig[key].read(shot), metricConfig[key].suffix)}
+                          </td>
+                        ))}
+                        <td data-label="Outlier">{shot.isOutlier ? 'Yes' : 'No'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </section>
+          )}
           {selectedSession.coachV2Plan && (
             <>
               <p>

@@ -1,4 +1,4 @@
-import type { GappingLadder, SessionSummary } from '@/lib/r10';
+import type { GappingLadder, SessionSummary, ShotRecord } from '@/lib/r10';
 import type {
   CoachConfidence,
   CoachConstraintKey,
@@ -10,9 +10,26 @@ import type {
 
 type CoachV2Options = {
   sessionsAnalyzed?: number;
+  shots?: ShotRecord[];
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const round1 = (value: number) => Math.round(value * 10) / 10;
+
+const numericValues = (shots: ShotRecord[], selector: (shot: ShotRecord) => number | null) =>
+  shots.map(selector).filter((value): value is number => typeof value === 'number');
+
+const stdDev = (values: number[]) => {
+  if (values.length < 2) return null;
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (values.length - 1);
+  return Math.sqrt(variance);
+};
+
+const meanAbs = (values: number[]) => {
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + Math.abs(value), 0) / values.length;
+};
 
 const worstClubByMetric = (
   clubs: SessionSummary['clubs'],
@@ -33,45 +50,92 @@ const worstClubByMetric = (
   return { club: winner, value: winnerValue };
 };
 
-const buildDirectionScore = (summary: SessionSummary): ConstraintScore => {
+const buildDirectionScore = (summary: SessionSummary, shots: ShotRecord[]): ConstraintScore => {
   const worstDirection = worstClubByMetric(summary.clubs, (club) => club.offlineStdDevYds);
-  const value = worstDirection.value;
-  const score = clamp(Math.round((value ?? 0) * 2.6), 0, 100);
+  const offlineStd = worstDirection.value;
+  const launchDirStd = stdDev(numericValues(shots, (shot) => shot.launchDirectionDeg));
+  const pathStd = stdDev(numericValues(shots, (shot) => shot.clubPathDeg));
+  const faceToPathAbs = meanAbs(numericValues(shots, (shot) => shot.faceToPathDeg));
+  const score = clamp(
+    Math.round(
+      (offlineStd ?? 0) * 1.9 +
+        (launchDirStd ?? 0) * 6 +
+        (pathStd ?? 0) * 5 +
+        (faceToPathAbs ?? 0) * 8
+    ),
+    0,
+    100
+  );
+  const reasons: string[] = [];
+  if (offlineStd !== null) {
+    reasons.push(
+      `${worstDirection.club?.displayName ?? 'Focus club'} shows ${offlineStd.toFixed(1)} yds offline std dev.`
+    );
+  }
+  if (launchDirStd !== null) {
+    reasons.push(`Launch direction std dev is ${round1(launchDirStd)} deg.`);
+  }
+  if (pathStd !== null) {
+    reasons.push(`Club path std dev is ${round1(pathStd)} deg.`);
+  }
+  if (faceToPathAbs !== null) {
+    reasons.push(`Average |face-to-path| is ${round1(faceToPathAbs)} deg.`);
+  }
+  if (!reasons.length) {
+    reasons.push('Not enough directional shot metrics yet to score direction consistency reliably.');
+  }
 
   return {
     key: 'direction_consistency',
     label: 'Direction consistency',
     score,
-    reasons: value
-      ? [
-          `${worstDirection.club?.displayName ?? 'Focus club'} shows the widest offline spread (${value.toFixed(1)} yds std dev).`
-        ]
-      : ['Not enough offline data yet to score direction consistency reliably.'],
+    reasons,
     focusClub: worstDirection.club?.displayName ?? null,
-    targetMetric: 'Offline std dev (yds)',
-    currentValue: value,
-    targetValue: value ? Math.round(value * 0.85 * 10) / 10 : null
+    targetMetric: launchDirStd !== null ? 'Launch direction std dev (deg)' : 'Offline std dev (yds)',
+    currentValue: launchDirStd ?? offlineStd,
+    targetValue:
+      launchDirStd !== null
+        ? round1(launchDirStd * 0.85)
+        : offlineStd !== null
+          ? round1(offlineStd * 0.85)
+          : null
   };
 };
 
-const buildDistanceScore = (summary: SessionSummary): ConstraintScore => {
+const buildDistanceScore = (summary: SessionSummary, shots: ShotRecord[]): ConstraintScore => {
   const worstDistance = worstClubByMetric(summary.clubs, (club) => club.carryStdDevYds);
-  const value = worstDistance.value;
-  const score = clamp(Math.round((value ?? 0) * 3), 0, 100);
+  const clubCarryStd = worstDistance.value;
+  const carryStd = stdDev(numericValues(shots, (shot) => shot.carryYds));
+  const ballSpeedStd = stdDev(numericValues(shots, (shot) => shot.ballSpeedMph));
+  const clubSpeedStd = stdDev(numericValues(shots, (shot) => shot.clubSpeedMph));
+  const smashStd = stdDev(numericValues(shots, (shot) => shot.smashFactor));
+  const score = clamp(
+    Math.round((carryStd ?? clubCarryStd ?? 0) * 3 + (ballSpeedStd ?? 0) * 5 + (clubSpeedStd ?? 0) * 4 + (smashStd ?? 0) * 20),
+    0,
+    100
+  );
+  const reasons: string[] = [];
+  if (carryStd !== null || clubCarryStd !== null) {
+    reasons.push(
+      `${worstDistance.club?.displayName ?? 'Session'} carry std dev is ${(carryStd ?? clubCarryStd ?? 0).toFixed(1)} yds.`
+    );
+  }
+  if (ballSpeedStd !== null) reasons.push(`Ball speed std dev is ${round1(ballSpeedStd)} mph.`);
+  if (clubSpeedStd !== null) reasons.push(`Club speed std dev is ${round1(clubSpeedStd)} mph.`);
+  if (smashStd !== null) reasons.push(`Smash factor std dev is ${round1(smashStd)}.`);
+  if (!reasons.length) {
+    reasons.push('Not enough carry/speed signals yet to score distance control reliably.');
+  }
 
   return {
     key: 'distance_control',
     label: 'Distance control',
     score,
-    reasons: value
-      ? [
-          `${worstDistance.club?.displayName ?? 'Focus club'} has the highest carry variance (${value.toFixed(1)} yds std dev).`
-        ]
-      : ['Not enough carry variance data yet to score distance control reliably.'],
+    reasons,
     focusClub: worstDistance.club?.displayName ?? null,
     targetMetric: 'Carry std dev (yds)',
-    currentValue: value,
-    targetValue: value ? Math.round(value * 0.85 * 10) / 10 : null
+    currentValue: carryStd ?? clubCarryStd,
+    targetValue: carryStd !== null ? round1(carryStd * 0.85) : clubCarryStd !== null ? round1(clubCarryStd * 0.85) : null
   };
 };
 
@@ -97,24 +161,33 @@ const buildGappingScore = (summary: SessionSummary, ladder: GappingLadder): Cons
   };
 };
 
-const buildStrikeScore = (summary: SessionSummary, distanceScore: ConstraintScore): ConstraintScore => {
-  const valueProxy = summary.avgBallSpeedMph;
-  const score = valueProxy === null ? 0 : clamp(Math.round(distanceScore.score * 0.55), 0, 100);
+const buildStrikeScore = (distanceScore: ConstraintScore, shots: ShotRecord[]): ConstraintScore => {
+  const smashValues = numericValues(shots, (shot) => shot.smashFactor);
+  const smashAvg = smashValues.length
+    ? smashValues.reduce((sum, value) => sum + value, 0) / smashValues.length
+    : null;
+  const smashStd = stdDev(smashValues);
+  const faceToPathAbs = meanAbs(numericValues(shots, (shot) => shot.faceToPathDeg));
+  const lowSmashPenalty = smashAvg === null ? 0 : clamp((1.25 - smashAvg) * 70, 0, 30);
+  const smashVarPenalty = smashStd === null ? 0 : clamp(smashStd * 120, 0, 35);
+  const faceControlPenalty = faceToPathAbs === null ? 0 : clamp(faceToPathAbs * 9, 0, 35);
+  const proxy = clamp(Math.round(distanceScore.score * 0.25), 0, 25);
+  const score = clamp(Math.round(lowSmashPenalty + smashVarPenalty + faceControlPenalty + proxy), 0, 100);
+  const reasons: string[] = [];
+  if (smashAvg !== null) reasons.push(`Average smash factor is ${round1(smashAvg)}.`);
+  if (smashStd !== null) reasons.push(`Smash factor std dev is ${round1(smashStd)}.`);
+  if (faceToPathAbs !== null) reasons.push(`Average |face-to-path| is ${round1(faceToPathAbs)} deg.`);
+  if (!reasons.length) reasons.push('Strike-quality scoring is limited because smash/face metrics are missing.');
 
   return {
     key: 'strike_quality',
     label: 'Strike quality',
     score,
-    reasons:
-      valueProxy === null
-        ? ['Ball speed data is missing, so strike-quality scoring is currently limited.']
-        : [
-            `Using carry variability as a strike-quality proxy until club-level smash data is available.`
-          ],
+    reasons,
     focusClub: distanceScore.focusClub,
-    targetMetric: 'Strike proxy score',
-    currentValue: score,
-    targetValue: score > 0 ? Math.max(0, score - 10) : null
+    targetMetric: smashAvg !== null ? 'Average smash factor' : 'Strike quality score',
+    currentValue: smashAvg ?? score,
+    targetValue: smashAvg !== null ? round1(smashAvg + 0.05) : score > 0 ? Math.max(0, score - 10) : null
   };
 };
 
@@ -223,10 +296,11 @@ export const buildCoachV2Plan = (
   if (!summary.clubs.length) return null;
 
   const sessionsAnalyzed = options.sessionsAnalyzed ?? 1;
-  const directionScore = buildDirectionScore(summary);
-  const distanceScore = buildDistanceScore(summary);
+  const shots = options.shots ?? [];
+  const directionScore = buildDirectionScore(summary, shots);
+  const distanceScore = buildDistanceScore(summary, shots);
   const gappingScore = buildGappingScore(summary, ladder);
-  const strikeScore = buildStrikeScore(summary, distanceScore);
+  const strikeScore = buildStrikeScore(distanceScore, shots);
 
   const sorted = [directionScore, distanceScore, gappingScore, strikeScore].sort((a, b) => b.score - a.score);
   const primaryConstraint = sorted[0];

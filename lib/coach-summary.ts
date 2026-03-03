@@ -10,8 +10,12 @@ const buildDeterministicSummary = (input: CoachSummaryInput) => {
       : input.tone === 'technical'
         ? 'Technical take'
         : 'Coach take';
+  const metricsLine =
+    input.shotMetricSummary && input.shotMetricSummary.length > 0
+      ? ` Shot metrics considered: ${input.shotMetricSummary.length} data series.`
+      : '';
 
-  return `${tonePrefix}: your primary limiter is ${input.primaryConstraint.toLowerCase()} with ${input.confidence.level} confidence (${input.confidence.score}/100). ${input.trendSummary} Target: ${input.target}. ${insightLine}`;
+  return `${tonePrefix}: your primary limiter is ${input.primaryConstraint.toLowerCase()} with ${input.confidence.level} confidence (${input.confidence.score}/100). ${input.trendSummary} Target: ${input.target}. ${insightLine}${metricsLine}`;
 };
 
 const isYouTubeUrl = (value: string) => {

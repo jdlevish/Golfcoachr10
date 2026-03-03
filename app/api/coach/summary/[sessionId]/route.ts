@@ -13,6 +13,61 @@ type RouteContext = {
   };
 };
 
+const round2 = (value: number) => Math.round(value * 100) / 100;
+
+const stdDev = (values: number[]) => {
+  if (values.length < 2) return null;
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (values.length - 1);
+  return Math.sqrt(variance);
+};
+
+const metricSummaryFromShots = (shots: ReturnType<typeof toShotRecords>) => {
+  const metricMap: Array<{ key: string; values: number[] }> = [
+    { key: 'ballSpeedMph', values: shots.map((shot) => shot.ballSpeedMph).filter((v): v is number => v !== null) },
+    { key: 'clubSpeedMph', values: shots.map((shot) => shot.clubSpeedMph).filter((v): v is number => v !== null) },
+    { key: 'smashFactor', values: shots.map((shot) => shot.smashFactor).filter((v): v is number => v !== null) },
+    { key: 'carryYds', values: shots.map((shot) => shot.carryYds).filter((v): v is number => v !== null) },
+    { key: 'totalYds', values: shots.map((shot) => shot.totalYds).filter((v): v is number => v !== null) },
+    { key: 'launchAngleDeg', values: shots.map((shot) => shot.launchAngleDeg).filter((v): v is number => v !== null) },
+    {
+      key: 'launchDirectionDeg',
+      values: shots.map((shot) => shot.launchDirectionDeg).filter((v): v is number => v !== null)
+    },
+    { key: 'clubPathDeg', values: shots.map((shot) => shot.clubPathDeg).filter((v): v is number => v !== null) },
+    {
+      key: 'faceToPathDeg',
+      values: shots.map((shot) => shot.faceToPathDeg).filter((v): v is number => v !== null)
+    },
+    { key: 'faceAngleDeg', values: shots.map((shot) => shot.faceAngleDeg).filter((v): v is number => v !== null) },
+    {
+      key: 'attackAngleDeg',
+      values: shots.map((shot) => shot.attackAngleDeg).filter((v): v is number => v !== null)
+    },
+    { key: 'spinRpm', values: shots.map((shot) => shot.spinRpm).filter((v): v is number => v !== null) },
+    { key: 'backspinRpm', values: shots.map((shot) => shot.backspinRpm).filter((v): v is number => v !== null) },
+    { key: 'sidespinRpm', values: shots.map((shot) => shot.sidespinRpm).filter((v): v is number => v !== null) },
+    { key: 'spinAxisDeg', values: shots.map((shot) => shot.spinAxisDeg).filter((v): v is number => v !== null) },
+    { key: 'apexFt', values: shots.map((shot) => shot.apexFt).filter((v): v is number => v !== null) },
+    { key: 'sideYds', values: shots.map((shot) => shot.sideYds).filter((v): v is number => v !== null) }
+  ];
+
+  return metricMap
+    .filter((metric) => metric.values.length > 0)
+    .map((metric) => {
+      const mean = metric.values.reduce((sum, value) => sum + value, 0) / metric.values.length;
+      const sd = stdDev(metric.values);
+      return {
+        key: metric.key,
+        samples: metric.values.length,
+        avg: round2(mean),
+        stdDev: sd === null ? null : round2(sd),
+        min: round2(Math.min(...metric.values)),
+        max: round2(Math.max(...metric.values))
+      };
+    });
+};
+
 export async function POST(_request: Request, context: RouteContext) {
   const session = await auth();
   const userId = session?.user?.id;
@@ -37,7 +92,7 @@ export async function POST(_request: Request, context: RouteContext) {
   const shots = toShotRecords(parsed.shots);
   const summary = summarizeSession(shots);
   const ladder = buildGappingLadder(summary);
-  const coachV2Plan = buildCoachV2Plan(summary, ladder, { sessionsAnalyzed: 1 });
+  const coachV2Plan = buildCoachV2Plan(summary, ladder, { sessionsAnalyzed: 1, shots });
   if (!coachV2Plan) {
     return NextResponse.json({ error: 'Could not generate coach plan.' }, { status: 422 });
   }
@@ -92,12 +147,13 @@ export async function POST(_request: Request, context: RouteContext) {
     },
     target: coachV2Plan.practicePlan.goal,
     trendSummary: trendDeltas.summary,
-    topInsights: ruleInsights.slice(0, 3).map((insight) => ({
+    topInsights: ruleInsights.slice(0, 6).map((insight) => ({
       title: insight.title,
       ifThen: insight.ifThen,
       evidence: insight.evidence,
       action: insight.action
-    }))
+    })),
+    shotMetricSummary: metricSummaryFromShots(shots)
   });
 
   const existingRecommendations = await prisma.drillLog.findMany({

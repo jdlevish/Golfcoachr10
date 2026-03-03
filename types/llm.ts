@@ -21,6 +21,14 @@ export type CoachSummaryInput = {
     evidence: string;
     action: string;
   }>;
+  shotMetricSummary?: Array<{
+    key: string;
+    samples: number;
+    avg: number | null;
+    stdDev: number | null;
+    min: number | null;
+    max: number | null;
+  }>;
 };
 
 export type CoachSummaryResult = {

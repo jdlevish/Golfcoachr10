@@ -63,7 +63,7 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
   // to avoid any stale-hydration edge cases during hot reloads.
   // Use a distinct identifier name to avoid any stale runtime references after hot reloads.
   const gappingLadder = buildGappingLadder(summary);
-  const coachV2Plan = buildCoachV2Plan(summary, gappingLadder, { sessionsAnalyzed: 1 });
+  const coachV2Plan = buildCoachV2Plan(summary, gappingLadder, { sessionsAnalyzed: 1, shots: analysisShots });
   const coachPlan = buildCoachPlan(summary, gappingLadder);
   const ruleInsights = buildRuleInsights(analysisShots, summary, gappingLadder);
   const problematicGapCount = gappingLadder.rows.filter(
@@ -243,6 +243,32 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
             <p className="helper-text">
               Sprint 2 Part A: median-carry ladder with adjacent gap health warnings (overlap, compressed, cliff).
             </p>
+            <details className="term-key">
+              <summary>Gapping Ladder Key</summary>
+              <ul>
+                <li>
+                  <strong>Median Carry:</strong> Your middle carry value for that club.
+                </li>
+                <li>
+                  <strong>P10-P90 Carry:</strong> Your typical carry band, from the 10th to 90th percentile.
+                </li>
+                <li>
+                  <strong>Gap To Next:</strong> Distance difference to the next shorter club.
+                </li>
+                <li>
+                  <strong>Healthy:</strong> Gap is in a normal playable range.
+                </li>
+                <li>
+                  <strong>Compressed:</strong> Gap is smaller than ideal, clubs may overlap in distance.
+                </li>
+                <li>
+                  <strong>Overlap:</strong> Gap is very small and club distances likely blend together.
+                </li>
+                <li>
+                  <strong>Cliff:</strong> Gap is too large, leaving an unusable distance hole.
+                </li>
+              </ul>
+            </details>
 
             {gappingLadder.insights.length > 0 && (
               <ul className="insights-list">
