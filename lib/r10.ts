@@ -42,19 +42,105 @@ export type ShotRecord = {
   raw: Record<string, string>;
 };
 
+export type NormalizedShot = {
+  club: string;
+  clubName?: string | null;
+  clubModel?: string | null;
+  timestamp?: string | null;
+  carryDistance: number | null;
+  totalDistance: number | null;
+  carryDeviationDistance: number | null;
+  carryDeviationAngle: number | null;
+  launchDirection: number | null;
+  launchAngle: number | null;
+  ballSpeed: number | null;
+  clubSpeed: number | null;
+  smashFactor: number | null;
+  clubPath: number | null;
+  clubFace: number | null;
+  faceToPath: number | null;
+  attackAngleDeg?: number | null;
+  backspin: number | null;
+  sidespin: number | null;
+  spinRate: number | null;
+  spinAxis: number | null;
+  apexHeight: number | null;
+  totalDeviationDistance?: number | null;
+};
+
 export type SessionDateCandidate = {
   isoDate: string;
 };
 
 export type ImportReport = {
-  totalRows: number;
-  parsedShots: number;
-  droppedRows: number;
-  outlierRows: number;
-  columnsDetected: string[];
-  columnsMissing: string[];
+  detectedColumns: string[];
+  missingColumns: string[];
+  shotCount: number;
   clubsDetected: string[];
   warnings: string[];
+};
+
+export type ClubStatsConfidence = 'High' | 'Medium' | 'Low';
+
+export type ClubDeterministicStats = {
+  count: number;
+  carryMedian: number | null;
+  carryMean: number | null;
+  carryStdDev: number | null;
+  offlineStdDev: number | null;
+  p10Carry: number | null;
+  p90Carry: number | null;
+  smashMedian: number | null;
+  smashStdDev: number | null;
+  faceToPathMean: number | null;
+  faceToPathStdDev: number | null;
+  clubPathMean: number | null;
+  clubFaceMean: number | null;
+  confidence: ClubStatsConfidence;
+};
+
+export type OverallDeterministicStats = Omit<ClubDeterministicStats, 'confidence'> & {
+  clubs: number;
+};
+
+export type DeterministicStats = {
+  perClubStats: Record<string, ClubDeterministicStats>;
+  overallStats: OverallDeterministicStats;
+};
+
+export type StartBucket = 'Left' | 'Straight' | 'Right';
+export type CurveBucket = 'LeftCurve' | 'StraightCurve' | 'RightCurve';
+export type Shape =
+  | 'PushFade'
+  | 'PushDraw'
+  | 'PullHook'
+  | 'PullFade'
+  | 'Straight'
+  | 'StraightFade'
+  | 'StraightDraw'
+  | 'Push'
+  | 'Pull';
+export type Severity = 'Mild' | 'Moderate' | 'Severe';
+
+export type ShotShapeClassification = {
+  shape: Shape;
+  severity: Severity;
+  startBucket: StartBucket;
+  curveBucket: CurveBucket;
+};
+
+export type MissPatternSummary = {
+  topShape: Shape;
+  distribution: Record<Shape, number>;
+  severePctByShape: Record<Shape, number>;
+  topSevereShape: Shape | null;
+  severePct: number;
+  totalShots: number;
+};
+
+export type MissPatternResult = {
+  overall: MissPatternSummary;
+  perClub: Record<string, MissPatternSummary>;
 };
 
 export type SessionSummary = {
@@ -136,8 +222,10 @@ const keyAliases: Record<
   | 'smashFactor'
   | 'apexFt'
   | 'carryYds'
+  | 'carryDeviationAngleDeg'
   | 'totalYds'
   | 'sideYds'
+  | 'totalDeviationDistanceYds'
   | 'spinRpm',
   string[]
 > = {
@@ -159,8 +247,10 @@ const keyAliases: Record<
   smashFactor: ['smash factor', 'smash'],
   apexFt: ['apex', 'apex height', 'height', 'peak height', 'max height', 'apex (ft)', 'height (ft)'],
   carryYds: ['carry', 'carry distance', 'carry (yds)', 'carry (yards)', 'carry distance (yd)', 'carry distance (yds)', 'carry yd', 'carry yds'],
+  carryDeviationAngleDeg: ['carry deviation angle', 'carry deviation angle (deg)', 'carry angle'],
   totalYds: ['total', 'total distance', 'total (yds)', 'total (yards)'],
   sideYds: ['side', 'side distance', 'side (yds)', 'carry deviation distance'],
+  totalDeviationDistanceYds: ['total deviation distance', 'total deviation distance (yds)', 'total deviation distance (yards)'],
   spinRpm: ['spin', 'spin rate', 'spin (rpm)']
 };
 
@@ -255,6 +345,18 @@ const roundedQuantile = (values: Array<number | null>, q: number) => {
   const numbers = toNumericArray(values);
   const value = quantile(numbers, q);
   return value === null ? null : Math.round(value * 10) / 10;
+};
+
+const meanRaw = (values: Array<number | null>) => {
+  const numbers = toNumericArray(values);
+  if (!numbers.length) return null;
+  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+};
+
+const clubConfidence = (count: number): ClubStatsConfidence => {
+  if (count >= 25) return 'High';
+  if (count >= 12) return 'Medium';
+  return 'Low';
 };
 
 const buildExpectedColumns = () =>
@@ -625,81 +727,38 @@ const markCarryOutliers = (shots: ShotRecord[]) => {
 };
 
 export const mapRowsToShots = (rows: Record<string, string>[]): ShotRecord[] => {
-  const shots: ShotRecord[] = [];
-
-  for (const row of rows) {
-    const clubTypeKey = findKeyByAliases(row, keyAliases.clubType);
-    const clubNameKey = findKeyByAliases(row, keyAliases.clubName);
-    const clubModelKey = findKeyByAliases(row, keyAliases.clubModel);
-
-    const parsedClubType = row[clubTypeKey ?? '']?.trim() || 'Unknown';
-    const clubName = row[clubNameKey ?? '']?.trim() || null;
-    const clubModel = row[clubModelKey ?? '']?.trim() || null;
-
-    // Fallback to club name when club type is unexpectedly missing in an export.
-    const clubType = parsedClubType !== 'Unknown' ? parsedClubType : clubName ?? 'Unknown';
-
-    const shot: ShotRecord = {
+  const { shots: normalizedShots } = parseRowsToNormalizedShots(rows);
+  const shots: ShotRecord[] = normalizedShots.map((shot) => {
+    const clubType = shot.club || 'Unknown';
+    const clubName = shot.clubName ?? null;
+    const clubModel = shot.clubModel ?? null;
+    return {
       clubType,
       clubName,
       clubModel,
       displayClub: clubName ? `${clubType} (${clubName})` : clubType,
-      ballSpeedMph: numeric(row[findKeyByAliases(row, keyAliases.ballSpeedMph) ?? '']),
-      clubSpeedMph: numeric(row[findKeyByAliases(row, keyAliases.clubSpeedMph) ?? '']),
-      launchAngleDeg: numeric(row[findKeyByAliases(row, keyAliases.launchAngleDeg) ?? '']),
-      clubPathDeg: numeric(row[findKeyByAliases(row, keyAliases.clubPathDeg) ?? '']),
-      faceToPathDeg: numeric(row[findKeyByAliases(row, keyAliases.faceToPathDeg) ?? '']),
-      faceAngleDeg: numeric(row[findKeyByAliases(row, keyAliases.faceAngleDeg) ?? '']),
-      attackAngleDeg: numeric(row[findKeyByAliases(row, keyAliases.attackAngleDeg) ?? '']),
-      launchDirectionDeg: numeric(row[findKeyByAliases(row, keyAliases.launchDirectionDeg) ?? '']),
-      spinAxisDeg: numeric(row[findKeyByAliases(row, keyAliases.spinAxisDeg) ?? '']),
-      backspinRpm: numeric(row[findKeyByAliases(row, keyAliases.backspinRpm) ?? '']),
-      sidespinRpm: numeric(row[findKeyByAliases(row, keyAliases.sidespinRpm) ?? '']),
-      smashFactor: numeric(row[findKeyByAliases(row, keyAliases.smashFactor) ?? '']),
-      apexFt: numeric(row[findKeyByAliases(row, keyAliases.apexFt) ?? '']),
-      carryYds: numeric(row[findKeyByAliases(row, keyAliases.carryYds) ?? '']),
-      totalYds: numeric(row[findKeyByAliases(row, keyAliases.totalYds) ?? '']),
-      sideYds: numeric(row[findKeyByAliases(row, keyAliases.sideYds) ?? '']),
-      spinRpm: numeric(row[findKeyByAliases(row, keyAliases.spinRpm) ?? '']),
+      ballSpeedMph: shot.ballSpeed,
+      clubSpeedMph: shot.clubSpeed,
+      launchAngleDeg: shot.launchAngle,
+      clubPathDeg: shot.clubPath,
+      faceToPathDeg: shot.faceToPath,
+      faceAngleDeg: shot.clubFace,
+      attackAngleDeg: shot.attackAngleDeg ?? null,
+      launchDirectionDeg: shot.launchDirection,
+      spinAxisDeg: shot.spinAxis,
+      backspinRpm: shot.backspin,
+      sidespinRpm: shot.sidespin,
+      smashFactor: shot.smashFactor,
+      apexFt: shot.apexHeight,
+      carryYds: shot.carryDistance,
+      totalYds: shot.totalDistance,
+      sideYds: shot.carryDeviationDistance ?? shot.totalDeviationDistance ?? null,
+      spinRpm: shot.spinRate,
       isOutlier: false,
       qualityFlags: [],
-      raw: row
+      raw: {}
     };
-
-    if (shot.clubType === 'Unknown') {
-      shot.qualityFlags.push('missing_club_type');
-    }
-
-    if (shot.carryYds !== null && shot.carryYds < 0) {
-      shot.qualityFlags.push('invalid_carry_distance');
-    }
-
-    const hasAnyCoreMetric =
-      shot.ballSpeedMph !== null ||
-      shot.clubSpeedMph !== null ||
-      shot.launchAngleDeg !== null ||
-      shot.clubPathDeg !== null ||
-      shot.faceToPathDeg !== null ||
-      shot.faceAngleDeg !== null ||
-      shot.attackAngleDeg !== null ||
-      shot.launchDirectionDeg !== null ||
-      shot.spinAxisDeg !== null ||
-      shot.backspinRpm !== null ||
-      shot.sidespinRpm !== null ||
-      shot.smashFactor !== null ||
-      shot.apexFt !== null ||
-      shot.carryYds !== null ||
-      shot.totalYds !== null ||
-      shot.sideYds !== null ||
-      shot.spinRpm !== null;
-
-    // Drop rows that have no reliable identity and no usable metrics.
-    if (shot.clubType === 'Unknown' && !hasAnyCoreMetric) {
-      continue;
-    }
-
-    shots.push(shot);
-  }
+  });
 
   markCarryOutliers(shots);
   return shots;
@@ -709,12 +768,12 @@ export const buildImportReport = (rows: Record<string, string>[], shots: ShotRec
   const detectedColumns = getDetectedColumns(rows);
   const expectedColumns = buildExpectedColumns();
 
-  const columnsDetected = expectedColumns
+  const parsedDetectedColumns = expectedColumns
     .filter((entry) => entry.aliases.some((alias) => detectedColumns.has(alias)))
     .map((entry) => entry.field)
     .sort();
 
-  const columnsMissing = expectedColumns
+  const parsedMissingColumns = expectedColumns
     .filter((entry) => !entry.aliases.some((alias) => detectedColumns.has(alias)))
     .map((entry) => entry.field)
     .sort();
@@ -727,26 +786,340 @@ export const buildImportReport = (rows: Record<string, string>[], shots: ShotRec
       })
     )
   ).sort();
-  const outlierRows = shots.filter((s) => s.isOutlier).length;
 
   const warnings: string[] = [];
-  if (columnsMissing.includes('clubType')) warnings.push('Missing canonical club type column.');
-  if (columnsMissing.includes('carryYds')) warnings.push('Missing carry distance column.');
-  if (columnsMissing.includes('sideYds')) warnings.push('Missing side/offline distance column for dispersion analysis.');
+  if (parsedMissingColumns.includes('clubType')) warnings.push('Missing canonical club type column.');
+  if (parsedMissingColumns.includes('carryYds')) warnings.push('Missing carry distance column.');
+  if (parsedMissingColumns.includes('sideYds')) warnings.push('Missing side/offline distance column for dispersion analysis.');
   if (shots.length < 10) warnings.push('Low shot count; analytics may be noisy.');
   if (!clubsDetected.length) warnings.push('No recognizable clubs detected.');
 
   return {
-    totalRows: rows.length,
-    parsedShots: shots.length,
-    droppedRows: Math.max(0, rows.length - shots.length),
-    outlierRows,
-    columnsDetected,
-    columnsMissing,
+    detectedColumns: parsedDetectedColumns,
+    missingColumns: parsedMissingColumns,
+    shotCount: shots.length,
     clubsDetected,
     warnings
   };
 };
+
+export const parseRowsToNormalizedShots = (
+  rows: Record<string, string>[]
+): { shots: NormalizedShot[]; importReport: ImportReport } => {
+  const shots: NormalizedShot[] = [];
+  const detectedColumns = getDetectedColumns(rows);
+  const expectedColumns = buildExpectedColumns();
+
+  for (const row of rows) {
+    const clubTypeKey = findKeyByAliases(row, keyAliases.clubType);
+    const clubNameKey = findKeyByAliases(row, keyAliases.clubName);
+    const clubModelKey = findKeyByAliases(row, keyAliases.clubModel);
+    const timestampKey = findKeyByAliases(row, keyAliases.sessionDate);
+
+    const parsedClubType = row[clubTypeKey ?? '']?.trim() || 'Unknown';
+    const clubName = row[clubNameKey ?? '']?.trim() || null;
+    const clubModel = row[clubModelKey ?? '']?.trim() || null;
+    const club = parsedClubType !== 'Unknown' ? parsedClubType : clubName ?? 'Unknown';
+
+    const shot: NormalizedShot = {
+      club,
+      clubName,
+      clubModel,
+      timestamp: timestampKey ? row[timestampKey] ?? null : null,
+      carryDistance: numeric(row[findKeyByAliases(row, keyAliases.carryYds) ?? '']),
+      totalDistance: numeric(row[findKeyByAliases(row, keyAliases.totalYds) ?? '']),
+      carryDeviationDistance: numeric(row[findKeyByAliases(row, keyAliases.sideYds) ?? '']),
+      carryDeviationAngle: numeric(row[findKeyByAliases(row, keyAliases.carryDeviationAngleDeg) ?? '']),
+      launchDirection: numeric(row[findKeyByAliases(row, keyAliases.launchDirectionDeg) ?? '']),
+      launchAngle: numeric(row[findKeyByAliases(row, keyAliases.launchAngleDeg) ?? '']),
+      ballSpeed: numeric(row[findKeyByAliases(row, keyAliases.ballSpeedMph) ?? '']),
+      clubSpeed: numeric(row[findKeyByAliases(row, keyAliases.clubSpeedMph) ?? '']),
+      smashFactor: numeric(row[findKeyByAliases(row, keyAliases.smashFactor) ?? '']),
+      clubPath: numeric(row[findKeyByAliases(row, keyAliases.clubPathDeg) ?? '']),
+      clubFace: numeric(row[findKeyByAliases(row, keyAliases.faceAngleDeg) ?? '']),
+      faceToPath: numeric(row[findKeyByAliases(row, keyAliases.faceToPathDeg) ?? '']),
+      attackAngleDeg: numeric(row[findKeyByAliases(row, keyAliases.attackAngleDeg) ?? '']),
+      backspin: numeric(row[findKeyByAliases(row, keyAliases.backspinRpm) ?? '']),
+      sidespin: numeric(row[findKeyByAliases(row, keyAliases.sidespinRpm) ?? '']),
+      spinRate: numeric(row[findKeyByAliases(row, keyAliases.spinRpm) ?? '']),
+      spinAxis: numeric(row[findKeyByAliases(row, keyAliases.spinAxisDeg) ?? '']),
+      apexHeight: numeric(row[findKeyByAliases(row, keyAliases.apexFt) ?? '']),
+      totalDeviationDistance: numeric(row[findKeyByAliases(row, keyAliases.totalDeviationDistanceYds) ?? ''])
+    };
+
+    const hasAnyCoreMetric =
+      shot.ballSpeed !== null ||
+      shot.clubSpeed !== null ||
+      shot.launchAngle !== null ||
+      shot.clubPath !== null ||
+      shot.faceToPath !== null ||
+      shot.clubFace !== null ||
+      shot.attackAngleDeg !== null ||
+      shot.launchDirection !== null ||
+      shot.spinAxis !== null ||
+      shot.backspin !== null ||
+      shot.sidespin !== null ||
+      shot.smashFactor !== null ||
+      shot.apexHeight !== null ||
+      shot.carryDistance !== null ||
+      shot.totalDistance !== null ||
+      shot.carryDeviationDistance !== null ||
+      shot.totalDeviationDistance !== null ||
+      shot.spinRate !== null;
+
+    if (shot.club === 'Unknown' && !hasAnyCoreMetric) {
+      continue;
+    }
+
+    shots.push(shot);
+  }
+
+  const parsedDetectedColumns = expectedColumns
+    .filter((entry) => entry.aliases.some((alias) => detectedColumns.has(alias)))
+    .map((entry) => entry.field)
+    .sort();
+  const parsedMissingColumns = expectedColumns
+    .filter((entry) => !entry.aliases.some((alias) => detectedColumns.has(alias)))
+    .map((entry) => entry.field)
+    .sort();
+  const clubsDetected = Array.from(new Set(shots.map((shot) => shot.club))).sort();
+  const warnings: string[] = [];
+  if (parsedMissingColumns.includes('clubType')) warnings.push('Missing canonical club type column.');
+  if (parsedMissingColumns.includes('carryYds')) warnings.push('Missing carry distance column.');
+  if (parsedMissingColumns.includes('sideYds') && parsedMissingColumns.includes('totalDeviationDistanceYds')) {
+    warnings.push('Missing carry and total deviation distance columns for offline dispersion analysis.');
+  }
+  if (shots.length < 10) warnings.push('Low shot count; analytics may be noisy.');
+  if (!clubsDetected.length) warnings.push('No recognizable clubs detected.');
+
+  return {
+    shots,
+    importReport: {
+      detectedColumns: parsedDetectedColumns,
+      missingColumns: parsedMissingColumns,
+      shotCount: shots.length,
+      clubsDetected,
+      warnings
+    }
+  };
+};
+
+export const computeStats = (shots: NormalizedShot[]): DeterministicStats => {
+  const grouped = new Map<string, NormalizedShot[]>();
+  for (const shot of shots) {
+    const key = shot.club || 'Unknown';
+    const list = grouped.get(key) ?? [];
+    list.push(shot);
+    grouped.set(key, list);
+  }
+
+  const toClubStats = (clubShots: NormalizedShot[]): ClubDeterministicStats => {
+    const carries = clubShots.map((shot) => shot.carryDistance);
+    const offlineValues = clubShots.map(
+      (shot) => shot.carryDeviationDistance ?? shot.totalDeviationDistance ?? null
+    );
+    const smashValues = clubShots.map((shot) => shot.smashFactor);
+    const faceToPathValues = clubShots.map((shot) => shot.faceToPath);
+    const clubPathValues = clubShots.map((shot) => shot.clubPath);
+    const clubFaceValues = clubShots.map((shot) => shot.clubFace);
+
+    return {
+      count: clubShots.length,
+      carryMedian: roundedQuantile(carries, 0.5),
+      carryMean: avg(carries),
+      carryStdDev: stdDev(carries),
+      offlineStdDev: stdDev(offlineValues),
+      p10Carry: roundedQuantile(carries, 0.1),
+      p90Carry: roundedQuantile(carries, 0.9),
+      smashMedian: roundedQuantile(smashValues, 0.5),
+      smashStdDev: stdDev(smashValues),
+      faceToPathMean: avg(faceToPathValues),
+      faceToPathStdDev: stdDev(faceToPathValues),
+      clubPathMean: avg(clubPathValues),
+      clubFaceMean: avg(clubFaceValues),
+      confidence: clubConfidence(clubShots.length)
+    };
+  };
+
+  const perClubStats: Record<string, ClubDeterministicStats> = {};
+  for (const [club, clubShots] of Array.from(grouped.entries())) {
+    perClubStats[club] = toClubStats(clubShots);
+  }
+
+  const carries = shots.map((shot) => shot.carryDistance);
+  const offlineValues = shots.map((shot) => shot.carryDeviationDistance ?? shot.totalDeviationDistance ?? null);
+  const smashValues = shots.map((shot) => shot.smashFactor);
+  const faceToPathValues = shots.map((shot) => shot.faceToPath);
+  const clubPathValues = shots.map((shot) => shot.clubPath);
+  const clubFaceValues = shots.map((shot) => shot.clubFace);
+
+  const overallStats: OverallDeterministicStats = {
+    clubs: Object.keys(perClubStats).length,
+    count: shots.length,
+    carryMedian: roundedQuantile(carries, 0.5),
+    carryMean: avg(carries),
+    carryStdDev: stdDev(carries),
+    offlineStdDev: stdDev(offlineValues),
+    p10Carry: roundedQuantile(carries, 0.1),
+    p90Carry: roundedQuantile(carries, 0.9),
+    smashMedian: roundedQuantile(smashValues, 0.5),
+    smashStdDev: stdDev(smashValues),
+    faceToPathMean: avg(faceToPathValues),
+    faceToPathStdDev: stdDev(faceToPathValues),
+    clubPathMean: avg(clubPathValues),
+    clubFaceMean: avg(clubFaceValues)
+  };
+
+  return { perClubStats, overallStats };
+};
+
+const shapeList: Shape[] = [
+  'PushFade',
+  'PushDraw',
+  'PullHook',
+  'PullFade',
+  'Straight',
+  'StraightFade',
+  'StraightDraw',
+  'Push',
+  'Pull'
+];
+
+const roundPct = (value: number) => Math.round(value * 10) / 10;
+
+const emptyShapeRecord = () =>
+  shapeList.reduce(
+    (acc, shape) => {
+      acc[shape] = 0;
+      return acc;
+    },
+    {} as Record<Shape, number>
+  );
+
+const shapeFromBuckets = (startBucket: StartBucket, curveBucket: CurveBucket): Shape => {
+  if (startBucket === 'Straight') {
+    if (curveBucket === 'RightCurve') return 'StraightFade';
+    if (curveBucket === 'LeftCurve') return 'StraightDraw';
+    return 'Straight';
+  }
+
+  if (startBucket === 'Right') {
+    if (curveBucket === 'RightCurve') return 'PushFade';
+    if (curveBucket === 'LeftCurve') return 'PushDraw';
+    return 'Push';
+  }
+
+  if (curveBucket === 'LeftCurve') return 'PullHook';
+  if (curveBucket === 'RightCurve') return 'PullFade';
+  return 'Pull';
+};
+
+export const classifyShotShape = (shot: NormalizedShot): ShotShapeClassification => {
+  const startValue = shot.launchDirection ?? 0;
+  const startBucket: StartBucket = startValue > 2 ? 'Right' : startValue < -2 ? 'Left' : 'Straight';
+
+  let curveBucket: CurveBucket = 'StraightCurve';
+  if (shot.spinAxis !== null && shot.spinAxis !== undefined) {
+    curveBucket = shot.spinAxis > 5 ? 'RightCurve' : shot.spinAxis < -5 ? 'LeftCurve' : 'StraightCurve';
+  } else if (shot.sidespin !== null && shot.sidespin !== undefined) {
+    curveBucket = shot.sidespin > 0 ? 'RightCurve' : shot.sidespin < 0 ? 'LeftCurve' : 'StraightCurve';
+  }
+
+  const offlineMagnitude = Math.abs(shot.carryDeviationDistance ?? shot.totalDeviationDistance ?? 0);
+  const severity: Severity = offlineMagnitude > 15 ? 'Severe' : offlineMagnitude >= 8 ? 'Moderate' : 'Mild';
+
+  return {
+    shape: shapeFromBuckets(startBucket, curveBucket),
+    severity,
+    startBucket,
+    curveBucket
+  };
+};
+
+const summarizeMisses = (shots: NormalizedShot[]): MissPatternSummary => {
+  const distributionCounts = emptyShapeRecord();
+  const severeCounts = emptyShapeRecord();
+  const total = shots.length;
+
+  for (const shot of shots) {
+    const classification = classifyShotShape(shot);
+    distributionCounts[classification.shape] += 1;
+    if (classification.severity === 'Severe') {
+      severeCounts[classification.shape] += 1;
+    }
+  }
+
+  const distribution = emptyShapeRecord();
+  const severePctByShape = emptyShapeRecord();
+  for (const shape of shapeList) {
+    distribution[shape] = total > 0 ? roundPct((distributionCounts[shape] / total) * 100) : 0;
+    severePctByShape[shape] = distributionCounts[shape] > 0 ? roundPct((severeCounts[shape] / distributionCounts[shape]) * 100) : 0;
+  }
+
+  const topShape =
+    shapeList.reduce((best, shape) => (distributionCounts[shape] > distributionCounts[best] ? shape : best), 'Straight' as Shape);
+  const topSevereShapeCandidate = shapeList.reduce(
+    (best, shape) => (severePctByShape[shape] > severePctByShape[best] ? shape : best),
+    'Straight' as Shape
+  );
+  const topSevereShape = severeCounts[topSevereShapeCandidate] > 0 ? topSevereShapeCandidate : null;
+  const severeTotal = shapeList.reduce((sum, shape) => sum + severeCounts[shape], 0);
+
+  return {
+    topShape,
+    distribution,
+    severePctByShape,
+    topSevereShape,
+    severePct: total > 0 ? roundPct((severeTotal / total) * 100) : 0,
+    totalShots: total
+  };
+};
+
+export const computeMissPatterns = (shots: NormalizedShot[]): MissPatternResult => {
+  const byClub = new Map<string, NormalizedShot[]>();
+  for (const shot of shots) {
+    const key = shot.club || 'Unknown';
+    const list = byClub.get(key) ?? [];
+    list.push(shot);
+    byClub.set(key, list);
+  }
+
+  const perClub: Record<string, MissPatternSummary> = {};
+  for (const [club, clubShots] of Array.from(byClub.entries())) {
+    perClub[club] = summarizeMisses(clubShots);
+  }
+
+  return {
+    overall: summarizeMisses(shots),
+    perClub
+  };
+};
+
+export const toNormalizedShotsFromShotRecords = (shots: ShotRecord[]): NormalizedShot[] =>
+  shots.map((shot) => ({
+    club: shot.clubType,
+    clubName: shot.clubName,
+    clubModel: shot.clubModel,
+    timestamp: null,
+    carryDistance: shot.carryYds,
+    totalDistance: shot.totalYds,
+    carryDeviationDistance: shot.sideYds,
+    carryDeviationAngle: null,
+    launchDirection: shot.launchDirectionDeg,
+    launchAngle: shot.launchAngleDeg,
+    ballSpeed: shot.ballSpeedMph,
+    clubSpeed: shot.clubSpeedMph,
+    smashFactor: shot.smashFactor,
+    clubPath: shot.clubPathDeg,
+    clubFace: shot.faceAngleDeg,
+    faceToPath: shot.faceToPathDeg,
+    attackAngleDeg: shot.attackAngleDeg ?? null,
+    backspin: shot.backspinRpm,
+    sidespin: shot.sidespinRpm,
+    spinRate: shot.spinRpm,
+    spinAxis: shot.spinAxisDeg,
+    apexHeight: shot.apexFt
+  }));
 
 export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {
   const grouped = new Map<string, ShotRecord[]>();
@@ -758,9 +1131,12 @@ export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {
     grouped.set(key, existing);
   }
 
+  const normalizedShots: NormalizedShot[] = toNormalizedShotsFromShotRecords(shots);
+  const deterministicStats = computeStats(normalizedShots);
+
   return {
     shots: shots.length,
-    avgCarryYds: avg(shots.map((s) => s.carryYds)),
+    avgCarryYds: deterministicStats.overallStats.carryMean,
     avgBallSpeedMph: avg(shots.map((s) => s.ballSpeedMph)),
     avgLaunchAngleDeg: avg(shots.map((s) => s.launchAngleDeg)),
     avgSpinRpm: avg(shots.map((s) => s.spinRpm)),
@@ -768,19 +1144,20 @@ export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {
       .map(([name, list]) => {
         const clubType = list[0]?.clubType ?? 'Unknown';
         const primaryModel = list[0]?.clubModel ?? null;
+        const clubStats = deterministicStats.perClubStats[clubType];
         return {
         name,
         clubType,
         displayName: primaryModel ? `${clubType} (${primaryModel})` : list.find((shot) => shot.clubName)?.displayClub ?? clubType,
         shotLabels: Array.from(new Set(list.map((shot) => shot.clubName).filter((v): v is string => Boolean(v)))),
         modelLabels: Array.from(new Set(list.map((shot) => shot.clubModel).filter((v): v is string => Boolean(v)))),
-        shots: list.length,
-        avgCarryYds: avg(list.map((s) => s.carryYds)),
-        medianCarryYds: roundedQuantile(list.map((s) => s.carryYds), 0.5),
-        p10CarryYds: roundedQuantile(list.map((s) => s.carryYds), 0.1),
-        p90CarryYds: roundedQuantile(list.map((s) => s.carryYds), 0.9),
-        carryStdDevYds: stdDev(list.map((s) => s.carryYds)),
-        offlineStdDevYds: stdDev(list.map((s) => s.sideYds))
+        shots: clubStats?.count ?? list.length,
+        avgCarryYds: clubStats?.carryMean ?? avg(list.map((s) => s.carryYds)),
+        medianCarryYds: clubStats?.carryMedian ?? roundedQuantile(list.map((s) => s.carryYds), 0.5),
+        p10CarryYds: clubStats?.p10Carry ?? roundedQuantile(list.map((s) => s.carryYds), 0.1),
+        p90CarryYds: clubStats?.p90Carry ?? roundedQuantile(list.map((s) => s.carryYds), 0.9),
+        carryStdDevYds: clubStats?.carryStdDev ?? stdDev(list.map((s) => s.carryYds)),
+        offlineStdDevYds: clubStats?.offlineStdDev ?? stdDev(list.map((s) => s.sideYds))
       };
       })
       .sort((a, b) => {

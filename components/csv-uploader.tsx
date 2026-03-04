@@ -1,74 +1,234 @@
 'use client';
 
 import Papa from 'papaparse';
-import { useMemo, useState } from 'react';
-import { buildRuleInsights } from '@/lib/analysis';
-import { buildCoachV2Plan } from '@/lib/coach-v2';
+import { useEffect, useMemo, useState } from 'react';
+import { computeCoachDiagnosis } from '@/lib/coach-diagnosis';
 import {
-  buildCoachPlan,
-  buildGappingLadder,
+  computeMissPatterns,
   buildImportReport,
   inferSessionDateFromRows,
   mapRowsToShots,
   summarizeSession,
-  type GapStatus,
+  toNormalizedShotsFromShotRecords,
   type ImportReport,
+  type Shape,
   type ShotRecord
 } from '@/lib/r10';
 import { toStoredShots } from '@/lib/session-storage';
 
 const formatValue = (value: number | null, suffix = '') =>
-  value === null ? '—' : `${value.toFixed(1)}${suffix}`;
+  value === null ? '-' : `${value.toFixed(1)}${suffix}`;
 
-const formatRange = (low: number | null, high: number | null, suffix = '') => {
-  if (low === null || high === null) return '—';
-  return `${low.toFixed(1)}${suffix} – ${high.toFixed(1)}${suffix}`;
-};
+const formatList = (values: string[]) => (values.length ? values.join(', ') : '-');
 
-const formatList = (values: string[]) => (values.length ? values.join(', ') : '—');
-
-
-const formatGapStatus = (status: GapStatus | null) => {
-  if (!status) return '—';
-  if (status === 'healthy') return 'Healthy';
-  if (status === 'compressed') return 'Compressed';
-  if (status === 'overlap') return 'Overlap';
-  return 'Cliff';
-};
+const formatBreakdownTerms = (terms: Record<string, number | null>) =>
+  Object.entries(terms)
+    .map(([key, value]) => `${key}=${typeof value === 'number' ? value.toFixed(2) : 'n/a'}`)
+    .join(', ') || 'n/a';
 
 type CsvUploaderProps = {
   onSessionSaved?: () => void;
 };
 
+type UploadView = 'import' | 'coach' | 'gapping' | 'deepdive';
+
+type LadderRow = {
+  club: string;
+  carryMedian: number;
+  p10Carry: number | null;
+  p90Carry: number | null;
+  gapToNext: number | null;
+  status: 'overlap' | 'compressed' | 'healthy' | 'cliff' | null;
+  warning: string | null;
+};
+
+const buildPracticePlanStub = (constraintType: string, club: string) => {
+  if (constraintType === 'DirectionConsistency') {
+    return [
+      `Alignment-gate start line block (${club})`,
+      'Face-to-path control reps with one shot shape',
+      'Target-switch transfer set to validate dispersion'
+    ];
+  }
+  if (constraintType === 'FaceControl') {
+    return [
+      `Face-awareness drill block (${club})`,
+      'Narrow shape rehearsal with launch-direction checks',
+      'Pressure set to hold face-to-path windows'
+    ];
+  }
+  if (constraintType === 'DistanceControl') {
+    return [
+      `Carry ladder block (${club})`,
+      'Tempo and speed window stabilization reps',
+      'Random distance challenge with carry targets'
+    ];
+  }
+  return [
+    `Centered-contact and smash stability reps (${club})`,
+    'Strike-quality maintenance set',
+    'Transfer set with changing targets'
+  ];
+};
+
 export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
   const [shots, setShots] = useState<ShotRecord[]>([]);
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
-  const [showOutliers, setShowOutliers] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sourceFileName, setSourceFileName] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [savingSession, setSavingSession] = useState(false);
   const [sessionDate, setSessionDate] = useState<string | null>(null);
+  const [view, setView] = useState<UploadView>('import');
+  const [excludeOutliers, setExcludeOutliers] = useState(false);
+  const [selectedClub, setSelectedClub] = useState<'all' | string>('all');
 
-  const visibleShots = useMemo(
-    () => (showOutliers ? shots : shots.filter((shot) => !shot.isOutlier)),
-    [showOutliers, shots]
+  const navigate = (nextView: UploadView, replace = false) => {
+    setView(nextView);
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    url.hash = `upload-${nextView}`;
+    if (replace) {
+      window.history.replaceState({ uploadView: nextView }, '', url);
+      return;
+    }
+    window.history.pushState({ uploadView: nextView }, '', url);
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const parseHash = (): UploadView | null => {
+      const hash = window.location.hash;
+      if (!hash.startsWith('#upload-')) return null;
+      const next = hash.replace('#upload-', '');
+      if (next === 'import' || next === 'coach' || next === 'gapping' || next === 'deepdive') {
+        return next;
+      }
+      return null;
+    };
+
+    const fromHash = parseHash();
+    if (fromHash) {
+      setView(fromHash);
+    } else {
+      const url = new URL(window.location.href);
+      url.hash = `upload-${view}`;
+      window.history.replaceState({ uploadView: view }, '', url);
+    }
+
+    const onPopState = (event: PopStateEvent) => {
+      const next = event.state?.uploadView as UploadView | undefined;
+      if (next === 'import' || next === 'coach' || next === 'gapping' || next === 'deepdive') {
+        setView(next);
+        return;
+      }
+      const fallback = parseHash();
+      if (fallback) setView(fallback);
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [view]);
+
+  const analysisShots = useMemo(
+    () => (excludeOutliers ? shots.filter((shot) => !shot.isOutlier) : shots),
+    [excludeOutliers, shots]
   );
-  const analysisShots = useMemo(() => {
-    // If outlier filtering removes every shot, fall back to all shots so coach/gapping still render.
-    return visibleShots.length > 0 ? visibleShots : shots;
-  }, [shots, visibleShots]);
+
   const summary = useMemo(() => summarizeSession(analysisShots), [analysisShots]);
-  // Keep this as a plain derived value (instead of nested memo dependencies)
-  // to avoid any stale-hydration edge cases during hot reloads.
-  // Use a distinct identifier name to avoid any stale runtime references after hot reloads.
-  const gappingLadder = buildGappingLadder(summary);
-  const coachV2Plan = buildCoachV2Plan(summary, gappingLadder, { sessionsAnalyzed: 1, shots: analysisShots });
-  const coachPlan = buildCoachPlan(summary, gappingLadder);
-  const ruleInsights = buildRuleInsights(analysisShots, summary, gappingLadder);
-  const problematicGapCount = gappingLadder.rows.filter(
-    (row) => row.gapStatus === 'overlap' || row.gapStatus === 'cliff'
-  ).length;
+  const normalizedShots = useMemo(() => toNormalizedShotsFromShotRecords(analysisShots), [analysisShots]);
+  const missPatterns = useMemo(() => computeMissPatterns(normalizedShots), [normalizedShots]);
+  const coachDiagnosis = useMemo(() => computeCoachDiagnosis(normalizedShots), [normalizedShots]);
+
+  const topThreeShapes = useMemo(() => {
+    return Object.entries(missPatterns.overall.distribution)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3) as Array<[Shape, number]>;
+  }, [missPatterns]);
+
+  const primaryMetricLabel = useMemo(() => {
+    const primary = coachDiagnosis.primary;
+    if (primary.constraintType === 'DirectionConsistency') return 'offlineStdDev';
+    if (primary.constraintType === 'FaceControl') return 'faceToPathStdDev';
+    if (primary.constraintType === 'DistanceControl') return 'carryStdDev';
+    return 'smashStdDev';
+  }, [coachDiagnosis]);
+
+  const primaryMetricValue = coachDiagnosis.primary.keyMetrics[primaryMetricLabel] ?? null;
+
+  const ladderRows = useMemo(() => {
+    const ranked = [...summary.clubs]
+      .map((club) => ({
+        club: club.displayName,
+        carryMedian: club.medianCarryYds ?? club.avgCarryYds,
+        p10Carry: club.p10CarryYds,
+        p90Carry: club.p90CarryYds
+      }))
+      .filter((club): club is { club: string; carryMedian: number; p10Carry: number | null; p90Carry: number | null } =>
+        club.carryMedian !== null
+      )
+      .sort((a, b) => b.carryMedian - a.carryMedian);
+
+    const rows: LadderRow[] = [];
+    for (let i = 0; i < ranked.length; i += 1) {
+      const current = ranked[i];
+      const next = ranked[i + 1];
+      const gapToNext = next ? Number((current.carryMedian - next.carryMedian).toFixed(1)) : null;
+      let status: LadderRow['status'] = null;
+      if (gapToNext !== null) {
+        if (gapToNext < 5) status = 'overlap';
+        else if (gapToNext < 8) status = 'compressed';
+        else if (gapToNext > 18) status = 'cliff';
+        else status = 'healthy';
+      }
+      let warning: string | null = null;
+      if (status === 'overlap') warning = `${current.club} overlaps next club (${gapToNext?.toFixed(1)} yds).`;
+      if (status === 'cliff') warning = `${current.club} has a distance cliff to next club (${gapToNext?.toFixed(1)} yds).`;
+
+      rows.push({
+        club: current.club,
+        carryMedian: current.carryMedian,
+        p10Carry: current.p10Carry,
+        p90Carry: current.p90Carry,
+        gapToNext,
+        status,
+        warning
+      });
+    }
+    return rows;
+  }, [summary.clubs]);
+
+  const availableClubs = useMemo(() => {
+    return Array.from(new Set(analysisShots.map((shot) => shot.displayClub))).sort((a, b) => a.localeCompare(b));
+  }, [analysisShots]);
+
+  const deepDiveShots = useMemo(() => {
+    if (selectedClub === 'all') return analysisShots;
+    return analysisShots.filter((shot) => shot.displayClub === selectedClub);
+  }, [analysisShots, selectedClub]);
+
+  const dispersionPoints = useMemo(() => {
+    const valid = deepDiveShots.filter(
+      (shot): shot is ShotRecord & { sideYds: number; carryYds: number } =>
+        typeof shot.sideYds === 'number' && typeof shot.carryYds === 'number'
+    );
+    if (!valid.length) return [] as Array<{ x: number; y: number; outlier: boolean }>;
+    const width = 520;
+    const height = 220;
+    const xValues = valid.map((shot) => shot.sideYds);
+    const yValues = valid.map((shot) => shot.carryYds);
+    const xMin = Math.min(...xValues);
+    const xMax = Math.max(...xValues);
+    const yMin = Math.min(...yValues);
+    const yMax = Math.max(...yValues);
+    const xSpan = Math.max(1, xMax - xMin);
+    const ySpan = Math.max(1, yMax - yMin);
+    return valid.map((shot) => ({
+      x: ((shot.sideYds - xMin) / xSpan) * width,
+      y: height - ((shot.carryYds - yMin) / ySpan) * height,
+      outlier: shot.isOutlier
+    }));
+  }, [deepDiveShots]);
 
   const onFileChange = (file: File) => {
     setError(null);
@@ -89,10 +249,14 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
         if (!nextShots.length) {
           setError('No recognizable shot rows were found in this CSV.');
           setShots([]);
+          navigate('import', true);
           return;
         }
 
         setShots(nextShots);
+        setExcludeOutliers(false);
+        setSelectedClub('all');
+        navigate('coach');
       },
       error(parseError) {
         setError(parseError.message);
@@ -132,329 +296,281 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
 
   return (
     <div className="stack">
-      <label className="uploader" htmlFor="csvInput">
-        <input
-          id="csvInput"
-          accept=".csv,text/csv"
-          type="file"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) onFileChange(file);
-          }}
-        />
-        <strong>Upload Garmin R10 CSV</strong>
-        <span>Choose an exported range session to parse, validate, and summarize.</span>
-      </label>
-
-      {error && <p className="error">{error}</p>}
-
-      {importReport && (
-        <section className="diagnostics" aria-label="Import diagnostics">
-          <h2>Import Diagnostics</h2>
-          <div className="diagnostics-grid">
-            <p>
-              <strong>Total rows:</strong> {importReport.totalRows}
-            </p>
-            <p>
-              <strong>Parsed shots:</strong> {importReport.parsedShots}
-            </p>
-            <p>
-              <strong>Dropped rows:</strong> {importReport.droppedRows}
-            </p>
-            <p>
-              <strong>Outlier rows:</strong> {importReport.outlierRows}
-            </p>
-            <p>
-              <strong>Columns detected:</strong> {formatList(importReport.columnsDetected)}
-            </p>
-            <p>
-              <strong>Columns missing:</strong> {formatList(importReport.columnsMissing)}
-            </p>
-            <p>
-              <strong>Clubs detected:</strong> {formatList(importReport.clubsDetected)}
-            </p>
-          </div>
-          {importReport.warnings.length > 0 && (
-            <ul>
-              {importReport.warnings.map((warning) => (
-                <li key={warning}>{warning}</li>
-              ))}
-            </ul>
+      <section className="auth-panel">
+        <div className="section-header">
+          <h2>Import</h2>
+          {shots.length > 0 && (
+            <button type="button" onClick={() => navigate('coach')}>
+              View Coach
+            </button>
           )}
-        </section>
-      )}
+        </div>
 
-      {shots.length > 0 && (
-        <>
-          <section className="summary-grid" aria-label="Session summary">
+        <label className="uploader" htmlFor="csvInput">
+          <input
+            id="csvInput"
+            accept=".csv,text/csv"
+            type="file"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) onFileChange(file);
+            }}
+          />
+          <strong>Upload Garmin R10 CSV</strong>
+          <span>Choose an exported range session to parse and normalize.</span>
+        </label>
+
+        {error && <p className="error">{error}</p>}
+
+        {importReport && (
+          <div className="summary-grid" aria-label="Import report summary">
             <article>
               <h3>Shots</h3>
-              <p>{summary.shots}</p>
+              <p>{importReport.shotCount}</p>
             </article>
             <article>
-              <h3>Avg Carry</h3>
-              <p>{formatValue(summary.avgCarryYds, ' yds')}</p>
+              <h3>Detected Columns</h3>
+              <p>{importReport.detectedColumns.length}</p>
             </article>
             <article>
-              <h3>Avg Ball Speed</h3>
-              <p>{formatValue(summary.avgBallSpeedMph, ' mph')}</p>
+              <h3>Missing Columns</h3>
+              <p>{importReport.missingColumns.length}</p>
             </article>
             <article>
-              <h3>Avg Spin</h3>
-              <p>{formatValue(summary.avgSpinRpm, ' rpm')}</p>
+              <h3>Clubs Detected</h3>
+              <p>{importReport.clubsDetected.length}</p>
             </article>
             <article>
-              <h3>Gapping Rows</h3>
-              <p>{gappingLadder.rows.length}</p>
+              <h3>Warnings</h3>
+              <p>{importReport.warnings.length}</p>
             </article>
-            <article>
-              <h3>Gap Alerts</h3>
-              <p>{problematicGapCount}</p>
-            </article>
-          </section>
+          </div>
+        )}
 
-          {!showOutliers && shots.length > 0 && visibleShots.length === 0 && (
-            <p className="helper-text">
-              All shots were flagged as outliers, so Coach and Gapping are using the full shot set.
+        {importReport && (
+          <details className="term-key">
+            <summary>ImportReport Details</summary>
+            <p>
+              <strong>Detected:</strong> {formatList(importReport.detectedColumns)}
             </p>
-          )}
+            <p>
+              <strong>Missing:</strong> {formatList(importReport.missingColumns)}
+            </p>
+            <p>
+              <strong>Clubs:</strong> {formatList(importReport.clubsDetected)}
+            </p>
+            {importReport.warnings.length > 0 && (
+              <ul>
+                {importReport.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            )}
+          </details>
+        )}
+      </section>
 
-          <label className="toggle-row" htmlFor="showOutliers">
-            <input
-              id="showOutliers"
-              type="checkbox"
-              checked={showOutliers}
-              onChange={(event) => setShowOutliers(event.target.checked)}
-            />
-            Include outlier shots in summary calculations
-          </label>
+      {shots.length > 0 && (
+        <section className="auth-panel">
+          <div className="flow-tabs" role="tablist" aria-label="Session flow screens">
+            <button
+              type="button"
+              className={view === 'coach' ? 'flow-tab active' : 'flow-tab'}
+              onClick={() => navigate('coach')}
+            >
+              Coach
+            </button>
+            <button
+              type="button"
+              className={view === 'gapping' ? 'flow-tab active' : 'flow-tab'}
+              onClick={() => navigate('gapping')}
+            >
+              Gapping Ladder
+            </button>
+            <button
+              type="button"
+              className={view === 'deepdive' ? 'flow-tab active' : 'flow-tab'}
+              onClick={() => navigate('deepdive')}
+            >
+              Deep Dive
+            </button>
+          </div>
 
           <div className="persist-actions">
             <button type="button" onClick={saveSession} disabled={savingSession}>
               {savingSession ? 'Saving session...' : 'Save session to history'}
             </button>
             {saveStatus && <p className="helper-text">{saveStatus}</p>}
+            <button type="button" onClick={() => navigate('import')}>
+              Back To Import
+            </button>
           </div>
 
+          {view === 'coach' && (
+            <section className="stack" aria-label="Coach screen">
+              <section className="summary-grid" aria-label="Coach landing card">
+                <article>
+                  <h3>Primary Issue</h3>
+                  <p>{coachDiagnosis.primary.constraintType}</p>
+                </article>
+                <article>
+                  <h3>Club</h3>
+                  <p>{coachDiagnosis.primary.club}</p>
+                </article>
+                <article>
+                  <h3>Key Metric</h3>
+                  <p>
+                    {primaryMetricLabel}: {typeof primaryMetricValue === 'number' ? primaryMetricValue.toFixed(2) : 'n/a'}
+                  </p>
+                </article>
+                <article>
+                  <h3>Target</h3>
+                  <p>Reduce 15-20% over 3 sessions</p>
+                </article>
+              </section>
 
-
-          <section>
-            <h2>Gapping Ladder</h2>
-            <p className="helper-text">
-              Sprint 2 Part A: median-carry ladder with adjacent gap health warnings (overlap, compressed, cliff).
-            </p>
-            <details className="term-key">
-              <summary>Gapping Ladder Key</summary>
-              <ul>
-                <li>
-                  <strong>Median Carry:</strong> Your middle carry value for that club.
-                </li>
-                <li>
-                  <strong>P10-P90 Carry:</strong> Your typical carry band, from the 10th to 90th percentile.
-                </li>
-                <li>
-                  <strong>Gap To Next:</strong> Distance difference to the next shorter club.
-                </li>
-                <li>
-                  <strong>Healthy:</strong> Gap is in a normal playable range.
-                </li>
-                <li>
-                  <strong>Compressed:</strong> Gap is smaller than ideal, clubs may overlap in distance.
-                </li>
-                <li>
-                  <strong>Overlap:</strong> Gap is very small and club distances likely blend together.
-                </li>
-                <li>
-                  <strong>Cliff:</strong> Gap is too large, leaving an unusable distance hole.
-                </li>
-              </ul>
-            </details>
-
-            {gappingLadder.insights.length > 0 && (
-              <ul className="insights-list">
-                {gappingLadder.insights.map((insight) => (
-                  <li key={insight.message} className={`insight insight-${insight.severity}`}>
-                    {insight.message}
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {gappingLadder.rows.length === 0 ? (
-              <p className="helper-text">
-                No gapping ladder rows yet. Make sure your CSV includes carry distance and at least one recognized club type.
-              </p>
-            ) : (
-              <table>
-              <thead>
-                <tr>
-                  <th>Club</th>
-                  <th>Median Carry</th>
-                  <th>P10–P90 Carry</th>
-                  <th>Gap To Next</th>
-                  <th>Status</th>
-                  <th>Warning</th>
-                </tr>
-              </thead>
-              <tbody>
-                {gappingLadder.rows.map((row) => (
-                  <tr key={row.club}>
-                    <td data-label="Club">{row.displayClub}</td>
-                    <td data-label="Median Carry">{formatValue(row.medianCarryYds, ' yds')}</td>
-                    <td data-label="P10-P90 Carry">{formatRange(row.p10CarryYds, row.p90CarryYds, ' yds')}</td>
-                    <td data-label="Gap To Next">{formatValue(row.gapToNextYds, ' yds')}</td>
-                    <td data-label="Status">
-                      <span className={`gap-badge ${row.gapStatus ? `gap-${row.gapStatus}` : 'gap-none'}`}>
-                        {formatGapStatus(row.gapStatus)}
-                      </span>
-                    </td>
-                    <td data-label="Warning">{row.warning ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            )}
-          </section>
-
-
-
-          {/* Coach card is always rendered so users can always see guidance or diagnostics. */}
-          <section className="coach-card" aria-label="Coach guidance">
-            {coachV2Plan ? (
-              <>
-                <h2>Coach v2: {coachV2Plan.primaryConstraint.label}</h2>
-                <p>{coachV2Plan.trendSummary}</p>
-                <p>{coachV2Plan.primaryConstraint.reasons[0]}</p>
+              <article className="coach-card">
+                <h3>Deterministic Rationale</h3>
                 <p>
-                  <strong>Target:</strong> {coachV2Plan.practicePlan.goal}
+                  <strong>Primary:</strong> {coachDiagnosis.primary.scoreBreakdown.formula}
+                </p>
+                <p>{formatBreakdownTerms(coachDiagnosis.primary.scoreBreakdown.terms)}</p>
+                {coachDiagnosis.secondary && (
+                  <>
+                    <p>
+                      <strong>Secondary:</strong> {coachDiagnosis.secondary.constraintType} ({coachDiagnosis.secondary.club})
+                    </p>
+                    <p>{coachDiagnosis.secondary.scoreBreakdown.formula}</p>
+                    <p>{formatBreakdownTerms(coachDiagnosis.secondary.scoreBreakdown.terms)}</p>
+                  </>
+                )}
+              </article>
+
+              <article className="coach-card">
+                <h3>Miss Pattern Summary</h3>
+                <p>
+                  Most common miss: <strong>{missPatterns.overall.topShape}</strong>
                 </p>
                 <p>
-                  <strong>Confidence:</strong> {coachV2Plan.confidence.level} ({coachV2Plan.confidence.score}/100)
+                  Severe offline shots: <strong>{missPatterns.overall.severePct.toFixed(1)}%</strong>
                 </p>
-                {coachV2Plan.primaryConstraint.focusClub && (
-                  <p>
-                    <strong>Focus club:</strong> {coachV2Plan.primaryConstraint.focusClub}
-                  </p>
-                )}
-                {coachV2Plan.secondaryConstraint && (
-                  <p>
-                    <strong>Secondary limiter:</strong> {coachV2Plan.secondaryConstraint.label}
-                  </p>
-                )}
-                <h3>Next session plan ({coachV2Plan.practicePlan.durationMinutes} min)</h3>
+                <h4>Top 3 Shapes</h4>
                 <ul>
-                  {coachV2Plan.practicePlan.steps.map((step) => (
-                    <li key={step.title}>
-                      {step.title}: {step.objective} ({step.reps})
+                  {topThreeShapes.map(([shape, pct]) => (
+                    <li key={shape}>
+                      {shape}: {pct.toFixed(1)}%
                     </li>
                   ))}
                 </ul>
-                {ruleInsights.length > 0 && (
-                  <>
-                    <h3>If-Then Insights</h3>
-                    <ul>
-                      {ruleInsights.map((insight) => (
-                        <li key={insight.id}>
-                          <strong>{insight.title}:</strong> {insight.ifThen} Evidence: {insight.evidence} Action:{' '}
-                          {insight.action}
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-              </>
-            ) : coachPlan ? (
-              <>
-                <h2>{coachPlan.title}</h2>
-                <p>{coachPlan.explanation}</p>
-                <p>
-                  <strong>Target:</strong> {coachPlan.target}
-                </p>
-                {coachPlan.focusClub && (
-                  <p>
-                    <strong>Focus club:</strong> {coachPlan.focusClub}
-                  </p>
-                )}
-                <h3>Next session plan</h3>
+              </article>
+
+              <article className="coach-card">
+                <h3>Practice Plan Stub</h3>
                 <ul>
-                  {coachPlan.actions.map((action) => (
-                    <li key={action}>{action}</li>
+                  {buildPracticePlanStub(coachDiagnosis.primary.constraintType, coachDiagnosis.primary.club).map((step) => (
+                    <li key={step}>{step}</li>
                   ))}
                 </ul>
-              </>
-            ) : (
-              <>
-                <h2>Coach v1: Awaiting analyzable shot patterns</h2>
-                <p>
-                  Coach guidance is temporarily unavailable for this import. This usually means no analyzable clubs were
-                  produced after normalization/outlier filtering.
-                </p>
-                <p>
-                  <strong>Debug:</strong> shots={shots.length}, analyzed shots={analysisShots.length}, clubs={summary.clubs.length},
-                  gapping rows={gappingLadder.rows.length}
-                </p>
-                <ul>
-                  <li>Confirm your CSV includes Club Type (or Club Name) and Carry Distance columns.</li>
-                  <li>Try enabling the outlier checkbox to include all imported rows.</li>
-                  <li>Re-export the session and re-upload if fields look unexpectedly blank.</li>
-                </ul>
-              </>
-            )}
-          </section>
+              </article>
+            </section>
+          )}
 
-          <label className="toggle-row" htmlFor="showOutliers">
-            <input
-              id="showOutliers"
-              type="checkbox"
-              checked={showOutliers}
-              onChange={(event) => setShowOutliers(event.target.checked)}
-            />
-            Include outlier shots in summary calculations
-          </label>
+          {view === 'gapping' && (
+            <section className="stack" aria-label="Gapping ladder screen">
+              {ladderRows.length === 0 ? (
+                <p className="helper-text">No carry data available for gapping ladder.</p>
+              ) : (
+                ladderRows.map((row) => (
+                  <article key={row.club} className="coach-card">
+                    <h3>{row.club}</h3>
+                    <p>
+                      <strong>Carry Median:</strong> {formatValue(row.carryMedian, ' yds')}
+                    </p>
+                    <p>
+                      <strong>P10-P90:</strong> {formatValue(row.p10Carry, ' yds')} - {formatValue(row.p90Carry, ' yds')}
+                    </p>
+                    <p>
+                      <strong>Gap To Next:</strong> {formatValue(row.gapToNext, ' yds')}
+                    </p>
+                    <p>
+                      <strong>Status:</strong> {row.status ?? '-'}
+                    </p>
+                    {row.warning && <p className="insight insight-danger">{row.warning}</p>}
+                  </article>
+                ))
+              )}
+            </section>
+          )}
 
-          <section>
-            <h2>By Club</h2>
-            <p className="helper-text">
-              Sprint 1 Part B metrics: median carry, P10–P90 carry band, carry consistency (std dev), and
-              directional consistency (offline std dev).
-            </p>
-            <table>
-              <thead>
-                <tr>
-                  <th>Club</th>
-                  <th>Shots</th>
-                  <th>Median Carry</th>
-                  <th>P10–P90 Carry</th>
-                  <th>Carry Std Dev</th>
-                  <th>Offline Std Dev</th>
-                  <th>Avg Carry</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.clubs.map((club) => (
-                  <tr key={club.name}>
-                    <td data-label="Club">
-                      <div>{club.displayName}</div>
-                      {(club.shotLabels.length > 1 || club.modelLabels.length > 0) && (
-                        <small>
-                          {club.shotLabels.length > 1 && `Aliases: ${club.shotLabels.join(', ')}`}
-                          {club.shotLabels.length > 1 && club.modelLabels.length > 0 && ' • '}
-                          {club.modelLabels.length > 0 && `Models: ${club.modelLabels.join(', ')}`}
-                        </small>
-                      )}
-                    </td>
-                    <td data-label="Shots">{club.shots}</td>
-                    <td data-label="Median Carry">{formatValue(club.medianCarryYds, ' yds')}</td>
-                    <td data-label="P10-P90 Carry">{formatRange(club.p10CarryYds, club.p90CarryYds, ' yds')}</td>
-                    <td data-label="Carry Std Dev">{formatValue(club.carryStdDevYds, ' yds')}</td>
-                    <td data-label="Offline Std Dev">{formatValue(club.offlineStdDevYds, ' yds')}</td>
-                    <td data-label="Avg Carry">{formatValue(club.avgCarryYds, ' yds')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-        </>
+          {view === 'deepdive' && (
+            <section className="stack" aria-label="Deep dive screen">
+              <div className="full-range-controls">
+                <label htmlFor="deep-dive-club">Club</label>
+                <select
+                  id="deep-dive-club"
+                  value={selectedClub}
+                  onChange={(event) => setSelectedClub(event.target.value)}
+                >
+                  <option value="all">All clubs</option>
+                  {availableClubs.map((club) => (
+                    <option key={club} value={club}>
+                      {club}
+                    </option>
+                  ))}
+                </select>
+                <label htmlFor="deep-dive-outliers" className="toggle-row">
+                  <input
+                    id="deep-dive-outliers"
+                    type="checkbox"
+                    checked={excludeOutliers}
+                    onChange={(event) => setExcludeOutliers(event.target.checked)}
+                  />
+                  Exclude outliers
+                </label>
+              </div>
+
+              <article className="viz-card">
+                <h3>Dispersion Plot (Offline vs Carry)</h3>
+                {dispersionPoints.length > 0 ? (
+                  <svg viewBox="0 0 520 220" role="img" aria-label="Dispersion scatter chart">
+                    {dispersionPoints.map((point, index) => (
+                      <circle
+                        key={`${point.x}-${point.y}-${index}`}
+                        cx={point.x}
+                        cy={point.y}
+                        r={3.2}
+                        fill={point.outlier ? '#f87171' : 'var(--accent)'}
+                      />
+                    ))}
+                  </svg>
+                ) : (
+                  <p className="helper-text">Need carry and offline values to render dispersion for this filter.</p>
+                )}
+              </article>
+
+              <article className="coach-card">
+                <h3>Per-Club Miss Snapshot</h3>
+                {Object.keys(missPatterns.perClub).length === 0 ? (
+                  <p className="helper-text">No miss-pattern data available.</p>
+                ) : (
+                  <div className="stack compact-gap">
+                    {Object.entries(missPatterns.perClub).map(([club, pattern]) => (
+                      <details key={club} className="term-key">
+                        <summary>{club}</summary>
+                        <p>
+                          <strong>Most common miss:</strong> {pattern.topShape}
+                        </p>
+                        <p>
+                          <strong>Severe %:</strong> {pattern.severePct.toFixed(1)}%
+                        </p>
+                      </details>
+                    ))}
+                  </div>
+                )}
+              </article>
+            </section>
+          )}
+        </section>
       )}
     </div>
   );
