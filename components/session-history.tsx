@@ -221,11 +221,12 @@ type CollapsibleSectionProps = {
   isOpen: boolean;
   onToggle: () => void;
   children: ReactNode;
+  className?: string;
 };
 
-function CollapsibleSection({ title, isOpen, onToggle, children }: CollapsibleSectionProps) {
+function CollapsibleSection({ title, isOpen, onToggle, children, className }: CollapsibleSectionProps) {
   return (
-    <section className="auth-panel">
+    <section className={`auth-panel ${className ?? ''}`.trim()}>
       <div className="section-header">
         <h3>{title}</h3>
         <button type="button" onClick={onToggle}>
@@ -653,7 +654,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               </button>
             ))}
           </div>
-          <div className="flow-tabs" role="tablist" aria-label="All-time insight tabs">
+          <div className="flow-tabs sticky-flow-tabs" role="tablist" aria-label="All-time insight tabs">
             <button
               type="button"
               className={allTimeView === 'coach' ? 'flow-tab active' : 'flow-tab'}
@@ -1060,6 +1061,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
           title="Session Detail"
           isOpen={showSessionDetail}
           onToggle={() => setShowSessionDetail((value) => !value)}
+          className="session-detail-sticky"
         >
           <p>
             {formatDateTime(selectedSession.sessionDate)} |{' '}
@@ -1073,7 +1075,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
             Clubs tracked: {selectedSession.summary.clubs.length} | Gap alerts:{' '}
             {selectedSession.gappingLadder.rows.filter((row) => row.gapStatus === 'overlap' || row.gapStatus === 'cliff').length}
           </p>
-          <div className="flow-tabs" role="tablist" aria-label="Session insight tabs">
+          <div className="flow-tabs sticky-flow-tabs" role="tablist" aria-label="Session insight tabs">
             <button
               type="button"
               className={sessionView === 'coach' ? 'flow-tab active' : 'flow-tab'}
