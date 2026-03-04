@@ -1,7 +1,16 @@
 'use client';
 
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import type { CoachPlan, GappingLadder, SessionSummary, ShotRecord } from '@/lib/r10';
+import {
+  computeMissPatterns,
+  toNormalizedShotsFromShotRecords,
+  type CoachPlan,
+  type GappingLadder,
+  type SessionSummary,
+  type Shape,
+  type ShotRecord
+} from '@/lib/r10';
+import { computeCoachDiagnosis } from '@/lib/coach-diagnosis';
 import type { RuleInsight, TrendDeltas } from '@/types/analysis';
 import type { CoachV2Plan } from '@/types/coach';
 
@@ -94,6 +103,10 @@ const formatTrendDelta = (delta: number | null, unit: string) => {
   return `${sign}${delta.toFixed(1)} ${unit}`;
 };
 const formatValue = (value: number | null, suffix = '') => (value === null ? '-' : `${value.toFixed(1)}${suffix}`);
+const formatBreakdownTerms = (terms: Record<string, number | null>) =>
+  Object.entries(terms)
+    .map(([key, value]) => `${key}=${typeof value === 'number' ? value.toFixed(2) : 'n/a'}`)
+    .join(', ') || 'n/a';
 
 type MetricKey =
   | 'carryYds'
@@ -330,6 +343,32 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
     () => buildScatterPoints(fullDataShots, scatterXMetric, scatterYMetric),
     [fullDataShots, scatterXMetric, scatterYMetric]
   );
+  const selectedSessionMissPatterns = useMemo(
+    () => (selectedSession ? computeMissPatterns(toNormalizedShotsFromShotRecords(selectedSession.shots)) : null),
+    [selectedSession]
+  );
+  const selectedSessionDiagnosis = useMemo(
+    () => (selectedSession ? computeCoachDiagnosis(toNormalizedShotsFromShotRecords(selectedSession.shots)) : null),
+    [selectedSession]
+  );
+  const selectedSessionTopThreeShapes = useMemo(() => {
+    if (!selectedSessionMissPatterns) return [];
+    return Object.entries(selectedSessionMissPatterns.overall.distribution)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3) as Array<[Shape, number]>;
+  }, [selectedSessionMissPatterns]);
+  const selectedPrimaryMetricLabel = useMemo(() => {
+    if (!selectedSessionDiagnosis) return null;
+    const primary = selectedSessionDiagnosis.primary;
+    if (primary.constraintType === 'DirectionConsistency') return 'offlineStdDev';
+    if (primary.constraintType === 'FaceControl') return 'faceToPathStdDev';
+    if (primary.constraintType === 'DistanceControl') return 'carryStdDev';
+    return 'smashStdDev';
+  }, [selectedSessionDiagnosis]);
+  const selectedPrimaryMetricValue =
+    selectedSessionDiagnosis && selectedPrimaryMetricLabel
+      ? selectedSessionDiagnosis.primary.keyMetrics[selectedPrimaryMetricLabel] ?? null
+      : null;
 
   useEffect(() => {
     const load = async () => {
@@ -1105,6 +1144,86 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
           )}
           {selectedSession.coachV2Plan && (
             <>
+              {selectedSessionDiagnosis && (
+                <>
+                  <h3>Coach: Primary Issue</h3>
+                  <p>
+                    <strong>{selectedSessionDiagnosis.primary.constraintType}</strong> on{' '}
+                    <strong>{selectedSessionDiagnosis.primary.club}</strong> (confidence: {selectedSessionDiagnosis.primary.confidence})
+                  </p>
+                  <p>
+                    <strong>Key metric:</strong> {selectedPrimaryMetricLabel ?? 'n/a'}{' '}
+                    {typeof selectedPrimaryMetricValue === 'number' ? `= ${selectedPrimaryMetricValue.toFixed(2)}` : '= n/a'}
+                  </p>
+                  <p>
+                    <strong>Target suggestion:</strong> Reduce {selectedPrimaryMetricLabel ?? 'this metric'} by 15-20% over the next 3
+                    sessions.
+                  </p>
+                  <p>
+                    <strong>Reason:</strong> {selectedSessionDiagnosis.primary.scoreBreakdown.formula} |{' '}
+                    {formatBreakdownTerms(selectedSessionDiagnosis.primary.scoreBreakdown.terms)} | score=
+                    {selectedSessionDiagnosis.primary.severityScore.toFixed(2)}
+                  </p>
+                  {selectedSessionDiagnosis.secondary && (
+                    <>
+                      <p>
+                        <strong>Secondary issue:</strong> {selectedSessionDiagnosis.secondary.constraintType} on{' '}
+                        {selectedSessionDiagnosis.secondary.club}
+                      </p>
+                      <p>
+                        <strong>Secondary reason:</strong> {selectedSessionDiagnosis.secondary.scoreBreakdown.formula} |{' '}
+                        {formatBreakdownTerms(selectedSessionDiagnosis.secondary.scoreBreakdown.terms)} | score=
+                        {selectedSessionDiagnosis.secondary.severityScore.toFixed(2)}
+                      </p>
+                    </>
+                  )}
+                </>
+              )}
+              {selectedSessionMissPatterns && (
+                <>
+                  <section className="summary-grid" aria-label="Miss pattern summary">
+                    <article>
+                      <h3>Most common miss</h3>
+                      <p>{selectedSessionMissPatterns.overall.topShape}</p>
+                    </article>
+                    <article>
+                      <h3>Severe offline shots</h3>
+                      <p>{selectedSessionMissPatterns.overall.severePct.toFixed(1)}%</p>
+                    </article>
+                    <article>
+                      <h3>Top severe shape</h3>
+                      <p>{selectedSessionMissPatterns.overall.topSevereShape ?? 'None'}</p>
+                    </article>
+                  </section>
+                  <h3>Top miss shapes</h3>
+                  <ul>
+                    {selectedSessionTopThreeShapes.map(([shape, pct]) => (
+                      <li key={shape}>
+                        {shape}: {pct.toFixed(1)}%
+                      </li>
+                    ))}
+                  </ul>
+                  <h3>Per-club miss pattern</h3>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Club</th>
+                        <th>Most Common Miss</th>
+                        <th>Severe %</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(selectedSessionMissPatterns.perClub).map(([club, clubPattern]) => (
+                        <tr key={club}>
+                          <td data-label="Club">{club}</td>
+                          <td data-label="Most Common Miss">{clubPattern.topShape}</td>
+                          <td data-label="Severe %">{clubPattern.severePct.toFixed(1)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
               <p>
                 <strong>Coach focus:</strong> {selectedSession.coachV2Plan.primaryConstraint.label}
               </p>
