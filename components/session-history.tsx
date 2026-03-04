@@ -73,6 +73,7 @@ type SessionHistoryProps = {
 };
 
 type TimeWindow = 'all' | '1w' | '1m' | '3m' | '9m' | '1y';
+type InsightView = 'coach' | 'gapping' | 'deepdive';
 
 const timeWindowOptions: Array<{ value: TimeWindow; label: string }> = [
   { value: 'all', label: 'All Time' },
@@ -107,6 +108,16 @@ const formatBreakdownTerms = (terms: Record<string, number | null>) =>
   Object.entries(terms)
     .map(([key, value]) => `${key}=${typeof value === 'number' ? value.toFixed(2) : 'n/a'}`)
     .join(', ') || 'n/a';
+
+const resolveKeyMetricLabel = (constraintLabel: string) => {
+  const normalized = constraintLabel.toLowerCase();
+  if (normalized.includes('direction')) return 'Offline std dev';
+  if (normalized.includes('face')) return 'Face-to-path std dev';
+  if (normalized.includes('distance')) return 'Carry std dev';
+  if (normalized.includes('strike')) return 'Smash std dev';
+  if (normalized.includes('gapping')) return 'Gap alerts';
+  return 'Primary metric';
+};
 
 type MetricKey =
   | 'carryYds'
@@ -257,7 +268,8 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
   const [showAllTime, setShowAllTime] = useState(true);
   const [showSavedSessions, setShowSavedSessions] = useState(true);
   const [showSessionDetail, setShowSessionDetail] = useState(true);
-  const [showFullRangeData, setShowFullRangeData] = useState(false);
+  const [allTimeView, setAllTimeView] = useState<InsightView>('coach');
+  const [sessionView, setSessionView] = useState<InsightView>('coach');
   const [fullDataClubFilter, setFullDataClubFilter] = useState<'all' | string>('all');
   const [visibleMetrics, setVisibleMetrics] = useState<MetricKey[]>([
     'carryYds',
@@ -369,6 +381,25 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
     selectedSessionDiagnosis && selectedPrimaryMetricLabel
       ? selectedSessionDiagnosis.primary.keyMetrics[selectedPrimaryMetricLabel] ?? null
       : null;
+  const allTimePrimaryIssue = allTime?.coachV2Plan?.primaryConstraint.label ?? 'Unavailable';
+  const allTimePrimaryClub = allTime?.coachV2Plan?.primaryConstraint.focusClub ?? 'Session';
+  const allTimePrimaryMetricLabel = allTime?.coachV2Plan
+    ? allTime.coachV2Plan.primaryConstraint.targetMetric || resolveKeyMetricLabel(allTime.coachV2Plan.primaryConstraint.label)
+    : 'Primary metric';
+  const allTimePrimaryMetricValue = allTime?.coachV2Plan?.primaryConstraint.currentValue ?? null;
+  const allTimePrimaryTarget = allTime?.coachV2Plan?.practicePlan.goal ?? 'Build baseline consistency over next 3 sessions.';
+  const sessionPrimaryIssue = selectedSessionDiagnosis?.primary.constraintType ?? selectedSession?.coachV2Plan?.primaryConstraint.label ?? 'Unavailable';
+  const sessionPrimaryClub = selectedSessionDiagnosis?.primary.club ?? selectedSession?.coachV2Plan?.primaryConstraint.focusClub ?? 'Session';
+  const sessionPrimaryMetricLabel =
+    selectedPrimaryMetricLabel ??
+    (selectedSession?.coachV2Plan
+      ? selectedSession.coachV2Plan.primaryConstraint.targetMetric ||
+        resolveKeyMetricLabel(selectedSession.coachV2Plan.primaryConstraint.label)
+      : 'Primary metric');
+  const sessionPrimaryMetricValue =
+    selectedPrimaryMetricValue ?? selectedSession?.coachV2Plan?.primaryConstraint.currentValue ?? null;
+  const sessionPrimaryTarget =
+    selectedSession?.coachV2Plan?.practicePlan.goal ?? 'Reduce this metric by 15-20% over the next 3 sessions.';
 
   useEffect(() => {
     const load = async () => {
@@ -425,7 +456,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
     const payload = (await response.json()) as SessionDetail;
     setSelectedSession(payload);
     setShowSessionDetail(true);
-    setShowFullRangeData(false);
+    setSessionView('coach');
     setFullDataClubFilter('all');
     setVisibleMetrics([
       'carryYds',
@@ -601,6 +632,52 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               </button>
             ))}
           </div>
+          <div className="flow-tabs" role="tablist" aria-label="All-time insight tabs">
+            <button
+              type="button"
+              className={allTimeView === 'coach' ? 'flow-tab active' : 'flow-tab'}
+              onClick={() => setAllTimeView('coach')}
+            >
+              Coach
+            </button>
+            <button
+              type="button"
+              className={allTimeView === 'gapping' ? 'flow-tab active' : 'flow-tab'}
+              onClick={() => setAllTimeView('gapping')}
+            >
+              Gapping Ladder
+            </button>
+            <button
+              type="button"
+              className={allTimeView === 'deepdive' ? 'flow-tab active' : 'flow-tab'}
+              onClick={() => setAllTimeView('deepdive')}
+            >
+              Deep Dive
+            </button>
+          </div>
+          <section className="summary-grid" aria-label="All-time issue summary">
+            <article>
+              <h3>Primary Issue</h3>
+              <p>{allTimePrimaryIssue}</p>
+            </article>
+            <article>
+              <h3>Club</h3>
+              <p>{allTimePrimaryClub}</p>
+            </article>
+            <article>
+              <h3>Key Metric</h3>
+              <p>
+                {allTimePrimaryMetricLabel}:{' '}
+                {typeof allTimePrimaryMetricValue === 'number' ? allTimePrimaryMetricValue.toFixed(1) : '-'}
+              </p>
+            </article>
+            <article>
+              <h3>Target</h3>
+              <p>{allTimePrimaryTarget}</p>
+            </article>
+          </section>
+          {allTimeView === 'coach' && (
+            <>
           {coachProfile && (
             <>
               <h3>Coach Preferences</h3>
@@ -680,7 +757,11 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               </p>
             </article>
           </section>
+            </>
+          )}
 
+          {allTimeView === 'gapping' && (
+            <>
           <h3>Gapping Ladder</h3>
           <details className="term-key">
             <summary>Gapping Ladder Key</summary>
@@ -749,7 +830,11 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               </tbody>
             </table>
           )}
+            </>
+          )}
 
+          {allTimeView === 'deepdive' && (
+            <>
           <h3>By Club</h3>
           {allTime.summary.clubs.length === 0 ? (
             <p className="helper-text">No club stats in saved history yet.</p>
@@ -781,7 +866,11 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               </tbody>
             </table>
           )}
+            </>
+          )}
 
+          {allTimeView === 'coach' && (
+            <>
           {allTime.coachV2Plan && (
             <p>
               <strong>Current primary limiter:</strong> {allTime.coachV2Plan.primaryConstraint.label} (confidence{' '}
@@ -865,6 +954,8 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               </tbody>
             </table>
           )}
+            </>
+          )}
         </CollapsibleSection>
       )}
 
@@ -932,12 +1023,51 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
             Clubs tracked: {selectedSession.summary.clubs.length} | Gap alerts:{' '}
             {selectedSession.gappingLadder.rows.filter((row) => row.gapStatus === 'overlap' || row.gapStatus === 'cliff').length}
           </p>
-          <p>
-            <button type="button" onClick={() => setShowFullRangeData((value) => !value)}>
-              {showFullRangeData ? 'Hide Full Range Data' : 'Load Full Range Data'}
+          <div className="flow-tabs" role="tablist" aria-label="Session insight tabs">
+            <button
+              type="button"
+              className={sessionView === 'coach' ? 'flow-tab active' : 'flow-tab'}
+              onClick={() => setSessionView('coach')}
+            >
+              Coach
             </button>
-          </p>
-          {showFullRangeData && (
+            <button
+              type="button"
+              className={sessionView === 'gapping' ? 'flow-tab active' : 'flow-tab'}
+              onClick={() => setSessionView('gapping')}
+            >
+              Gapping Ladder
+            </button>
+            <button
+              type="button"
+              className={sessionView === 'deepdive' ? 'flow-tab active' : 'flow-tab'}
+              onClick={() => setSessionView('deepdive')}
+            >
+              Deep Dive
+            </button>
+          </div>
+          <section className="summary-grid" aria-label="Session issue summary">
+            <article>
+              <h3>Primary Issue</h3>
+              <p>{sessionPrimaryIssue}</p>
+            </article>
+            <article>
+              <h3>Club</h3>
+              <p>{sessionPrimaryClub}</p>
+            </article>
+            <article>
+              <h3>Key Metric</h3>
+              <p>
+                {sessionPrimaryMetricLabel}:{' '}
+                {typeof sessionPrimaryMetricValue === 'number' ? sessionPrimaryMetricValue.toFixed(2) : 'n/a'}
+              </p>
+            </article>
+            <article>
+              <h3>Target</h3>
+              <p>{sessionPrimaryTarget}</p>
+            </article>
+          </section>
+          {sessionView === 'deepdive' && (
             <section className="full-range-data">
               <div className="full-range-controls">
                 <label htmlFor="full-data-club-filter">Club filter</label>
@@ -1142,7 +1272,44 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               )}
             </section>
           )}
-          {selectedSession.coachV2Plan && (
+          {sessionView === 'gapping' && (
+            <>
+              <h3>Gapping Ladder</h3>
+              {selectedSession.gappingLadder.rows.length === 0 ? (
+                <p className="helper-text">No gapping ladder rows in this session.</p>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Club</th>
+                      <th>Median Carry</th>
+                      <th>P10-P90 Carry</th>
+                      <th>Gap To Next</th>
+                      <th>Status</th>
+                      <th>Warning</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedSession.gappingLadder.rows.map((row) => (
+                      <tr key={row.club}>
+                        <td data-label="Club">{row.displayClub}</td>
+                        <td data-label="Median Carry">{formatNumber(row.medianCarryYds, ' yds')}</td>
+                        <td data-label="P10-P90 Carry">{formatRange(row.p10CarryYds, row.p90CarryYds, ' yds')}</td>
+                        <td data-label="Gap To Next">{formatNumber(row.gapToNextYds, ' yds')}</td>
+                        <td data-label="Status">
+                          <span className={`gap-badge ${row.gapStatus ? `gap-${row.gapStatus}` : 'gap-none'}`}>
+                            {formatGapStatus(row.gapStatus)}
+                          </span>
+                        </td>
+                        <td data-label="Warning">{row.warning ?? '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </>
+          )}
+          {sessionView === 'coach' && selectedSession.coachV2Plan && (
             <>
               {selectedSessionDiagnosis && (
                 <>
@@ -1272,7 +1439,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               )}
             </>
           )}
-          {selectedSession.trendDeltas && (
+          {sessionView === 'coach' && selectedSession.trendDeltas && (
             <>
               <p>
                 <strong>Trend:</strong> {selectedSession.trendDeltas.summary}
@@ -1301,7 +1468,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               </table>
             </>
           )}
-          {selectedSession.ruleInsights.length > 0 && (
+          {sessionView === 'coach' && selectedSession.ruleInsights.length > 0 && (
             <ul className="insights-list">
               {selectedSession.ruleInsights.map((insight) => (
                 <li key={insight.id} className={`insight insight-${insight.severity}`}>
@@ -1310,46 +1477,50 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               ))}
             </ul>
           )}
-          <h3>Log Completed Drill</h3>
-          <div className="summary-grid">
-            <article>
-              <h3>Drill Name</h3>
-              <input value={drillName} onChange={(event) => setDrillName(event.target.value)} placeholder="e.g. Alignment gate" />
-            </article>
-            <article>
-              <h3>Duration (min)</h3>
-              <input
-                type="number"
-                min={1}
-                max={180}
-                value={drillDurationMins}
-                onChange={(event) => setDrillDurationMins(event.target.value)}
-              />
-            </article>
-            <article>
-              <h3>Outcome (1-5)</h3>
-              <input
-                type="number"
-                min={1}
-                max={5}
-                value={drillOutcome}
-                onChange={(event) => setDrillOutcome(event.target.value)}
-              />
-            </article>
-          </div>
-          <p>
-            <input
-              value={drillNotes}
-              onChange={(event) => setDrillNotes(event.target.value)}
-              placeholder="Optional notes about what worked"
-            />
-          </p>
-          <p>
-            <button type="button" onClick={() => void logDrill()}>
-              Log Drill
-            </button>
-            {drillStatus ? ` ${drillStatus}` : ''}
-          </p>
+          {sessionView === 'coach' && (
+            <>
+              <h3>Log Completed Drill</h3>
+              <div className="summary-grid">
+                <article>
+                  <h3>Drill Name</h3>
+                  <input value={drillName} onChange={(event) => setDrillName(event.target.value)} placeholder="e.g. Alignment gate" />
+                </article>
+                <article>
+                  <h3>Duration (min)</h3>
+                  <input
+                    type="number"
+                    min={1}
+                    max={180}
+                    value={drillDurationMins}
+                    onChange={(event) => setDrillDurationMins(event.target.value)}
+                  />
+                </article>
+                <article>
+                  <h3>Outcome (1-5)</h3>
+                  <input
+                    type="number"
+                    min={1}
+                    max={5}
+                    value={drillOutcome}
+                    onChange={(event) => setDrillOutcome(event.target.value)}
+                  />
+                </article>
+              </div>
+              <p>
+                <input
+                  value={drillNotes}
+                  onChange={(event) => setDrillNotes(event.target.value)}
+                  placeholder="Optional notes about what worked"
+                />
+              </p>
+              <p>
+                <button type="button" onClick={() => void logDrill()}>
+                  Log Drill
+                </button>
+                {drillStatus ? ` ${drillStatus}` : ''}
+              </p>
+            </>
+          )}
         </CollapsibleSection>
       )}
     </section>
