@@ -3,6 +3,7 @@
 import Papa from 'papaparse';
 import { useEffect, useMemo, useState } from 'react';
 import { computeCoachDiagnosis } from '@/lib/coach-diagnosis';
+import { generateDeterministicPlan } from '@/lib/drill-library';
 import {
   computeMissPatterns,
   buildImportReport,
@@ -42,35 +43,6 @@ type LadderRow = {
   warning: string | null;
 };
 
-const buildPracticePlanStub = (constraintType: string, club: string) => {
-  if (constraintType === 'DirectionConsistency') {
-    return [
-      `Alignment-gate start line block (${club})`,
-      'Face-to-path control reps with one shot shape',
-      'Target-switch transfer set to validate dispersion'
-    ];
-  }
-  if (constraintType === 'FaceControl') {
-    return [
-      `Face-awareness drill block (${club})`,
-      'Narrow shape rehearsal with launch-direction checks',
-      'Pressure set to hold face-to-path windows'
-    ];
-  }
-  if (constraintType === 'DistanceControl') {
-    return [
-      `Carry ladder block (${club})`,
-      'Tempo and speed window stabilization reps',
-      'Random distance challenge with carry targets'
-    ];
-  }
-  return [
-    `Centered-contact and smash stability reps (${club})`,
-    'Strike-quality maintenance set',
-    'Transfer set with changing targets'
-  ];
-};
-
 export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
   const [shots, setShots] = useState<ShotRecord[]>([]);
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
@@ -79,6 +51,16 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [savingSession, setSavingSession] = useState(false);
   const [sessionDate, setSessionDate] = useState<string | null>(null);
+  const [explainLoading, setExplainLoading] = useState(false);
+  const [explainError, setExplainError] = useState<string | null>(null);
+  const [explainResult, setExplainResult] = useState<{
+    summary: string;
+    whyThisHappens: string;
+    whatToDoNext: string;
+    onCourseTip: string;
+    source: string;
+    model?: string | null;
+  } | null>(null);
   const [view, setView] = useState<UploadView>('import');
   const [excludeOutliers, setExcludeOutliers] = useState(false);
   const [selectedClub, setSelectedClub] = useState<'all' | string>('all');
@@ -139,6 +121,8 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
   const normalizedShots = useMemo(() => toNormalizedShotsFromShotRecords(analysisShots), [analysisShots]);
   const missPatterns = useMemo(() => computeMissPatterns(normalizedShots), [normalizedShots]);
   const coachDiagnosis = useMemo(() => computeCoachDiagnosis(normalizedShots), [normalizedShots]);
+  const todaysPlan20 = useMemo(() => generateDeterministicPlan(coachDiagnosis, 20), [coachDiagnosis]);
+  const optionalPlan40 = useMemo(() => generateDeterministicPlan(coachDiagnosis, 40), [coachDiagnosis]);
 
   const topThreeShapes = useMemo(() => {
     return Object.entries(missPatterns.overall.distribution)
@@ -292,6 +276,36 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
     setSaveStatus('Session saved.');
     setSavingSession(false);
     onSessionSaved?.();
+  };
+
+  const generateCoachSummary = async () => {
+    setExplainLoading(true);
+    setExplainError(null);
+    setExplainResult(null);
+    const response = await fetch('/api/coach/explain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        diagnosis: coachDiagnosis,
+        missPattern: missPatterns.overall,
+        userTone: 'encouraging'
+      })
+    });
+    if (!response.ok) {
+      setExplainLoading(false);
+      setExplainError('Could not generate coach summary.');
+      return;
+    }
+    const payload = (await response.json()) as {
+      summary: string;
+      whyThisHappens: string;
+      whatToDoNext: string;
+      onCourseTip: string;
+      source: string;
+      model?: string | null;
+    };
+    setExplainResult(payload);
+    setExplainLoading(false);
   };
 
   return (
@@ -465,12 +479,110 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
               </article>
 
               <article className="coach-card">
-                <h3>Practice Plan Stub</h3>
+                <h3>Today&apos;s Plan (20 min)</h3>
+                <p>
+                  <strong>Target:</strong> {todaysPlan20.targetText}
+                </p>
+                <p>
+                  <strong>Warmup ({todaysPlan20.warmup.durationMin} min):</strong> {todaysPlan20.warmup.name} -{' '}
+                  {todaysPlan20.warmup.setupText} ({todaysPlan20.warmup.repsText})
+                </p>
+                <p>
+                  <strong>How:</strong> {todaysPlan20.warmup.setupText}
+                </p>
+                <p>
+                  <strong>Why:</strong> {todaysPlan20.warmup.explanation}
+                </p>
+                <h4>Drill Set</h4>
                 <ul>
-                  {buildPracticePlanStub(coachDiagnosis.primary.constraintType, coachDiagnosis.primary.club).map((step) => (
-                    <li key={step}>{step}</li>
+                  {todaysPlan20.drills.map((drill) => (
+                    <li key={drill.id}>
+                      <strong>{drill.name}</strong> ({drill.durationMin} min)
+                      <br />
+                      <strong>How:</strong> {drill.setupText}
+                      <br />
+                      <strong>Reps:</strong> {drill.repsText}
+                      <br />
+                      <strong>Success:</strong> {drill.successMetricText}
+                      <br />
+                      <strong>Why:</strong> {drill.explanation}
+                    </li>
                   ))}
                 </ul>
+                <p>
+                  <strong>Test Set ({todaysPlan20.testSet.durationMin} min):</strong> {todaysPlan20.testSet.name}
+                </p>
+                <p>
+                  <strong>How:</strong> {todaysPlan20.testSet.setupText}
+                </p>
+                <p>
+                  <strong>Success:</strong> {todaysPlan20.testSet.successMetricText}
+                </p>
+                <p>
+                  <strong>Why:</strong> {todaysPlan20.testSet.explanation}
+                </p>
+                <details className="term-key">
+                  <summary>Optional 40-minute plan</summary>
+                  <p>
+                    <strong>Target:</strong> {optionalPlan40.targetText}
+                  </p>
+                  <p>
+                    <strong>Warmup ({optionalPlan40.warmup.durationMin} min):</strong> {optionalPlan40.warmup.name} -{' '}
+                    {optionalPlan40.warmup.repsText}
+                    <br />
+                    <strong>How:</strong> {optionalPlan40.warmup.setupText}
+                    <br />
+                    <strong>Why:</strong> {optionalPlan40.warmup.explanation}
+                  </p>
+                  <ul>
+                    {optionalPlan40.drills.map((drill) => (
+                      <li key={drill.id}>
+                        <strong>{drill.name}</strong> ({drill.durationMin} min)
+                        <br />
+                        <strong>How:</strong> {drill.setupText}
+                        <br />
+                        <strong>Reps:</strong> {drill.repsText}
+                        <br />
+                        <strong>Why:</strong> {drill.explanation}
+                      </li>
+                    ))}
+                  </ul>
+                  <p>
+                    <strong>Test Set ({optionalPlan40.testSet.durationMin} min):</strong> {optionalPlan40.testSet.name} -{' '}
+                    {optionalPlan40.testSet.repsText}
+                    <br />
+                    <strong>How:</strong> {optionalPlan40.testSet.setupText}
+                    <br />
+                    <strong>Why:</strong> {optionalPlan40.testSet.explanation}
+                  </p>
+                </details>
+              </article>
+
+              <article className="coach-card">
+                <h3>Explain My Session</h3>
+                <p>
+                  <button type="button" onClick={() => void generateCoachSummary()} disabled={explainLoading}>
+                    {explainLoading ? 'Generating...' : 'Generate Coach Summary'}
+                  </button>
+                  {explainError ? ` ${explainError}` : ''}
+                </p>
+                {explainResult && (
+                  <>
+                    <p>
+                      <strong>Summary ({explainResult.source}{explainResult.model ? `:${explainResult.model}` : ''}):</strong>{' '}
+                      {explainResult.summary}
+                    </p>
+                    <p>
+                      <strong>Why this happens:</strong> {explainResult.whyThisHappens}
+                    </p>
+                    <p>
+                      <strong>What to do next:</strong> {explainResult.whatToDoNext}
+                    </p>
+                    <p>
+                      <strong>On-course tip:</strong> {explainResult.onCourseTip}
+                    </p>
+                  </>
+                )}
               </article>
             </section>
           )}
