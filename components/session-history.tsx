@@ -10,7 +10,8 @@ import {
   type Shape,
   type ShotRecord
 } from '@/lib/r10';
-import { computeCoachDiagnosis } from '@/lib/coach-diagnosis';
+import { computeCoachDiagnosis, type CoachDiagnosis, type ConstraintType } from '@/lib/coach-diagnosis';
+import { generateDeterministicPlan } from '@/lib/drill-library';
 import type { RuleInsight, TrendDeltas } from '@/types/analysis';
 import type { CoachV2Plan } from '@/types/coach';
 
@@ -53,19 +54,6 @@ type CoachProfile = {
   tone: 'straight' | 'encouraging' | 'technical';
   detailLevel: 'concise' | 'balanced' | 'deep';
   updatedAt: string | null;
-};
-
-type DrillLog = {
-  id: string;
-  shotSessionId: string | null;
-  constraintKey: string | null;
-  drillName: string;
-  videoUrl: string | null;
-  durationMins: number | null;
-  perceivedOutcome: number | null;
-  recommendationSource: string | null;
-  notes: string | null;
-  completedAt: string;
 };
 
 type SessionHistoryProps = {
@@ -117,6 +105,14 @@ const resolveKeyMetricLabel = (constraintLabel: string) => {
   if (normalized.includes('strike')) return 'Smash std dev';
   if (normalized.includes('gapping')) return 'Gap alerts';
   return 'Primary metric';
+};
+
+const mapCoachKeyToConstraintType = (key: string): ConstraintType => {
+  if (key === 'direction_consistency') return 'DirectionConsistency';
+  if (key === 'distance_control') return 'DistanceControl';
+  if (key === 'strike_quality') return 'StrikeQuality';
+  if (key === 'bag_gapping') return 'DistanceControl';
+  return 'DistanceControl';
 };
 
 type MetricKey =
@@ -249,19 +245,14 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
   const [error, setError] = useState<string | null>(null);
   const [coachProfile, setCoachProfile] = useState<CoachProfile | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
-  const [drillLogs, setDrillLogs] = useState<DrillLog[]>([]);
-  const [drillName, setDrillName] = useState('');
-  const [drillDurationMins, setDrillDurationMins] = useState('20');
-  const [drillOutcome, setDrillOutcome] = useState('3');
-  const [drillNotes, setDrillNotes] = useState('');
-  const [drillStatus, setDrillStatus] = useState<string | null>(null);
   const [analysisStatus, setAnalysisStatus] = useState<string | null>(null);
   const [coachSummary, setCoachSummary] = useState<{
     text: string;
     source: string;
     model: string | null;
-    recommendedDrills: Array<{ name: string; youtubeUrl: string; why: string }>;
-    drillRecommendationsLogged: number;
+    whyThisHappens: string;
+    whatToDoNext: string;
+    onCourseTip: string;
   } | null>(null);
   const [summaryStatus, setSummaryStatus] = useState<string | null>(null);
   const [timeWindow, setTimeWindow] = useState<TimeWindow>('all');
@@ -400,18 +391,81 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
     selectedPrimaryMetricValue ?? selectedSession?.coachV2Plan?.primaryConstraint.currentValue ?? null;
   const sessionPrimaryTarget =
     selectedSession?.coachV2Plan?.practicePlan.goal ?? 'Reduce this metric by 15-20% over the next 3 sessions.';
+  const allTimeDiagnosis = useMemo<CoachDiagnosis | null>(() => {
+    if (!allTime?.coachV2Plan) return null;
+    const primary = allTime.coachV2Plan.primaryConstraint;
+    return {
+      primary: {
+        constraintType: mapCoachKeyToConstraintType(primary.key),
+        club: primary.focusClub ?? 'Session',
+        severityScore: primary.score,
+        confidence: allTime.coachV2Plan.confidence.shotsAnalyzed >= 25 ? 'High' : allTime.coachV2Plan.confidence.shotsAnalyzed >= 12 ? 'Medium' : 'Low',
+        keyMetrics: {
+          currentValue: primary.currentValue ?? null,
+          targetValue: primary.targetValue ?? null
+        },
+        scoreBreakdown: {
+          formula: primary.targetMetric,
+          terms: {
+            currentValue: primary.currentValue ?? null,
+            targetValue: primary.targetValue ?? null
+          }
+        }
+      },
+      secondary: allTime.coachV2Plan.secondaryConstraint
+        ? {
+            constraintType: mapCoachKeyToConstraintType(allTime.coachV2Plan.secondaryConstraint.key),
+            club: allTime.coachV2Plan.secondaryConstraint.focusClub ?? 'Session',
+            severityScore: allTime.coachV2Plan.secondaryConstraint.score,
+            confidence:
+              allTime.coachV2Plan.confidence.shotsAnalyzed >= 25
+                ? 'High'
+                : allTime.coachV2Plan.confidence.shotsAnalyzed >= 12
+                  ? 'Medium'
+                  : 'Low',
+            keyMetrics: {
+              currentValue: allTime.coachV2Plan.secondaryConstraint.currentValue ?? null,
+              targetValue: allTime.coachV2Plan.secondaryConstraint.targetValue ?? null
+            },
+            scoreBreakdown: {
+              formula: allTime.coachV2Plan.secondaryConstraint.targetMetric,
+              terms: {
+                currentValue: allTime.coachV2Plan.secondaryConstraint.currentValue ?? null,
+                targetValue: allTime.coachV2Plan.secondaryConstraint.targetValue ?? null
+              }
+            }
+          }
+        : undefined,
+      sessionHighlights: {}
+    };
+  }, [allTime]);
+  const allTimePlan20 = useMemo(
+    () => (allTimeDiagnosis ? generateDeterministicPlan(allTimeDiagnosis, 20) : null),
+    [allTimeDiagnosis]
+  );
+  const allTimePlan40 = useMemo(
+    () => (allTimeDiagnosis ? generateDeterministicPlan(allTimeDiagnosis, 40) : null),
+    [allTimeDiagnosis]
+  );
+  const selectedSessionPlan20 = useMemo(
+    () => (selectedSessionDiagnosis ? generateDeterministicPlan(selectedSessionDiagnosis, 20) : null),
+    [selectedSessionDiagnosis]
+  );
+  const selectedSessionPlan40 = useMemo(
+    () => (selectedSessionDiagnosis ? generateDeterministicPlan(selectedSessionDiagnosis, 40) : null),
+    [selectedSessionDiagnosis]
+  );
 
   useEffect(() => {
     const load = async () => {
       setError(null);
-      const [sessionsResponse, allTimeResponse, profileResponse, drillLogsResponse] = await Promise.all([
+      const [sessionsResponse, allTimeResponse, profileResponse] = await Promise.all([
         fetch('/api/sessions', { cache: 'no-store' }),
         fetch(`/api/sessions/all-time?window=${timeWindow}`, { cache: 'no-store' }),
-        fetch('/api/coach/profile', { cache: 'no-store' }),
-        fetch('/api/coach/drills?limit=10', { cache: 'no-store' })
+        fetch('/api/coach/profile', { cache: 'no-store' })
       ]);
 
-      if (!sessionsResponse.ok || !allTimeResponse.ok || !profileResponse.ok || !drillLogsResponse.ok) {
+      if (!sessionsResponse.ok || !allTimeResponse.ok || !profileResponse.ok) {
         setError('Could not load session history.');
         return;
       }
@@ -419,11 +473,9 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
       const sessionsPayload = (await sessionsResponse.json()) as { sessions: SessionListItem[] };
       const allTimePayload = (await allTimeResponse.json()) as AllTimePayload;
       const profilePayload = (await profileResponse.json()) as { profile: CoachProfile };
-      const drillLogsPayload = (await drillLogsResponse.json()) as { drillLogs: DrillLog[] };
       setSessions(sessionsPayload.sessions);
       setAllTime(allTimePayload);
       setCoachProfile(profilePayload.profile);
-      setDrillLogs(drillLogsPayload.drillLogs);
       if (!sessionsPayload.sessions.length) {
         setSelectedSession(null);
       }
@@ -483,9 +535,6 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
     setExpandedViz(null);
     setShotSortMetric('shotIndex');
     setShotSortDirection('asc');
-    if (payload.coachV2Plan?.practicePlan.steps[0]) {
-      setDrillName(payload.coachV2Plan.practicePlan.steps[0].title);
-    }
     setLoadingSessionId(null);
   };
 
@@ -531,38 +580,6 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
     setSavingProfile(false);
   };
 
-  const logDrill = async () => {
-    if (!drillName.trim()) {
-      setDrillStatus('Enter a drill name first.');
-      return;
-    }
-    setDrillStatus(null);
-    const response = await fetch('/api/coach/drills', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        shotSessionId: selectedSession?.id,
-        constraintKey: selectedSession?.coachV2Plan?.primaryConstraint.key,
-        drillName: drillName.trim(),
-        durationMins: Number(drillDurationMins),
-        perceivedOutcome: Number(drillOutcome),
-        notes: drillNotes.trim() || undefined
-      })
-    });
-
-    if (!response.ok) {
-      setDrillStatus('Could not save drill log.');
-      return;
-    }
-
-    setDrillStatus('Drill logged.');
-    const refreshResponse = await fetch('/api/coach/drills?limit=10', { cache: 'no-store' });
-    if (refreshResponse.ok) {
-      const payload = (await refreshResponse.json()) as { drillLogs: DrillLog[] };
-      setDrillLogs(payload.drillLogs);
-    }
-  };
-
   const snapshotAnalysis = async () => {
     if (!selectedSession) return;
     setAnalysisStatus(null);
@@ -577,11 +594,18 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
   };
 
   const generateSummary = async () => {
-    if (!selectedSession) return;
+    if (!selectedSession || !selectedSessionDiagnosis || !selectedSessionMissPatterns) return;
     setSummaryStatus('Generating summary...');
     setCoachSummary(null);
-    const response = await fetch(`/api/coach/summary/${selectedSession.id}`, {
-      method: 'POST'
+    const userTone = coachProfile?.tone === 'straight' ? 'direct' : coachProfile?.tone ?? 'encouraging';
+    const response = await fetch('/api/coach/explain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        diagnosis: selectedSessionDiagnosis,
+        missPattern: selectedSessionMissPatterns.overall,
+        userTone
+      })
     });
     if (!response.ok) {
       setSummaryStatus('Could not generate summary.');
@@ -591,21 +615,18 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
       summary: string;
       source: string;
       model: string | null;
-      recommendedDrills: Array<{ name: string; youtubeUrl: string; why: string }>;
-      drillRecommendationsLogged: number;
+      whyThisHappens: string;
+      whatToDoNext: string;
+      onCourseTip: string;
     };
     setCoachSummary({
       text: payload.summary,
       source: payload.source,
       model: payload.model,
-      recommendedDrills: payload.recommendedDrills ?? [],
-      drillRecommendationsLogged: payload.drillRecommendationsLogged ?? 0
+      whyThisHappens: payload.whyThisHappens,
+      whatToDoNext: payload.whatToDoNext,
+      onCourseTip: payload.onCourseTip
     });
-    const refreshResponse = await fetch('/api/coach/drills?limit=10', { cache: 'no-store' });
-    if (refreshResponse.ok) {
-      const logsPayload = (await refreshResponse.json()) as { drillLogs: DrillLog[] };
-      setDrillLogs(logsPayload.drillLogs);
-    }
     setSummaryStatus(null);
   };
 
@@ -877,6 +898,72 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               {allTime.coachV2Plan.confidence.level}, {allTime.coachV2Plan.confidence.score}/100)
             </p>
           )}
+          {allTimePlan20 && (
+            <section className="coach-card" aria-label="All-time plan">
+              <h3>Today&apos;s Plan (20 min)</h3>
+              <p>
+                <strong>Target:</strong> {allTimePlan20.targetText}
+              </p>
+              <p>
+                <strong>Warmup ({allTimePlan20.warmup.durationMin} min):</strong> {allTimePlan20.warmup.name} -{' '}
+                {allTimePlan20.warmup.repsText}
+              </p>
+              <p>
+                <strong>How:</strong> {allTimePlan20.warmup.setupText}
+              </p>
+              <p>
+                <strong>Why:</strong> {allTimePlan20.warmup.explanation}
+              </p>
+              <ul>
+                {allTimePlan20.drills.map((drill) => (
+                  <li key={drill.id}>
+                    <strong>{drill.name}</strong> ({drill.durationMin} min)
+                    <br />
+                    <strong>How:</strong> {drill.setupText}
+                    <br />
+                    <strong>Reps:</strong> {drill.repsText}
+                    <br />
+                    <strong>Success:</strong> {drill.successMetricText}
+                    <br />
+                    <strong>Why:</strong> {drill.explanation}
+                  </li>
+                ))}
+              </ul>
+              <p>
+                <strong>Test Set ({allTimePlan20.testSet.durationMin} min):</strong> {allTimePlan20.testSet.name}
+              </p>
+              <p>
+                <strong>How:</strong> {allTimePlan20.testSet.setupText}
+              </p>
+              <p>
+                <strong>Success:</strong> {allTimePlan20.testSet.successMetricText}
+              </p>
+              <p>
+                <strong>Why:</strong> {allTimePlan20.testSet.explanation}
+              </p>
+              {allTimePlan40 && (
+                <details className="term-key">
+                  <summary>Optional 40-minute plan</summary>
+                  <p>
+                    <strong>Target:</strong> {allTimePlan40.targetText}
+                  </p>
+                  <ul>
+                    {allTimePlan40.drills.map((drill) => (
+                      <li key={drill.id}>
+                        <strong>{drill.name}</strong> ({drill.durationMin} min)
+                        <br />
+                        <strong>How:</strong> {drill.setupText}
+                        <br />
+                        <strong>Reps:</strong> {drill.repsText}
+                        <br />
+                        <strong>Why:</strong> {drill.explanation}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </section>
+          )}
           {allTime.trendDeltas && (
             <>
               <h3>Trend Deltas</h3>
@@ -916,43 +1003,6 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
                 ))}
               </ul>
             </>
-          )}
-          <h3>Recent Drill Logs</h3>
-          {drillLogs.length === 0 ? (
-            <p className="helper-text">No drill logs yet.</p>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Drill</th>
-                  <th>Video</th>
-                  <th>Constraint</th>
-                  <th>Duration</th>
-                  <th>Outcome</th>
-                </tr>
-              </thead>
-              <tbody>
-                {drillLogs.map((log) => (
-                  <tr key={log.id}>
-                    <td data-label="Date">{formatDateTime(log.completedAt)}</td>
-                    <td data-label="Drill">{log.drillName}</td>
-                    <td data-label="Video">
-                      {log.videoUrl ? (
-                        <a href={log.videoUrl} target="_blank" rel="noreferrer">
-                          YouTube
-                        </a>
-                      ) : (
-                        '-'
-                      )}
-                    </td>
-                    <td data-label="Constraint">{log.constraintKey ?? '-'}</td>
-                    <td data-label="Duration">{log.durationMins ?? '-'} min</td>
-                    <td data-label="Outcome">{log.perceivedOutcome ?? '-'}/5</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           )}
             </>
           )}
@@ -1344,6 +1394,72 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
                       </p>
                     </>
                   )}
+                  {selectedSessionPlan20 && (
+                    <section className="coach-card" aria-label="Session plan">
+                      <h3>Today&apos;s Plan (20 min)</h3>
+                      <p>
+                        <strong>Target:</strong> {selectedSessionPlan20.targetText}
+                      </p>
+                      <p>
+                        <strong>Warmup ({selectedSessionPlan20.warmup.durationMin} min):</strong> {selectedSessionPlan20.warmup.name} -{' '}
+                        {selectedSessionPlan20.warmup.repsText}
+                      </p>
+                      <p>
+                        <strong>How:</strong> {selectedSessionPlan20.warmup.setupText}
+                      </p>
+                      <p>
+                        <strong>Why:</strong> {selectedSessionPlan20.warmup.explanation}
+                      </p>
+                      <ul>
+                        {selectedSessionPlan20.drills.map((drill) => (
+                          <li key={drill.id}>
+                            <strong>{drill.name}</strong> ({drill.durationMin} min)
+                            <br />
+                            <strong>How:</strong> {drill.setupText}
+                            <br />
+                            <strong>Reps:</strong> {drill.repsText}
+                            <br />
+                            <strong>Success:</strong> {drill.successMetricText}
+                            <br />
+                            <strong>Why:</strong> {drill.explanation}
+                          </li>
+                        ))}
+                      </ul>
+                      <p>
+                        <strong>Test Set ({selectedSessionPlan20.testSet.durationMin} min):</strong> {selectedSessionPlan20.testSet.name}
+                      </p>
+                      <p>
+                        <strong>How:</strong> {selectedSessionPlan20.testSet.setupText}
+                      </p>
+                      <p>
+                        <strong>Success:</strong> {selectedSessionPlan20.testSet.successMetricText}
+                      </p>
+                      <p>
+                        <strong>Why:</strong> {selectedSessionPlan20.testSet.explanation}
+                      </p>
+                      {selectedSessionPlan40 && (
+                        <details className="term-key">
+                          <summary>Optional 40-minute plan</summary>
+                          <p>
+                            <strong>Target:</strong> {selectedSessionPlan40.targetText}
+                          </p>
+                          <ul>
+                            {selectedSessionPlan40.drills.map((drill) => (
+                              <li key={drill.id}>
+                                <strong>{drill.name}</strong> ({drill.durationMin} min)
+                                <br />
+                                <strong>How:</strong> {drill.setupText}
+                                <br />
+                                <strong>Reps:</strong> {drill.repsText}
+                                <br />
+                                <strong>Why:</strong> {drill.explanation}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                    </section>
+                  )}
                 </>
               )}
               {selectedSessionMissPatterns && (
@@ -1416,25 +1532,14 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
                     {coachSummary.text}
                   </p>
                   <p>
-                    <strong>Drill recommendations logged:</strong> {coachSummary.drillRecommendationsLogged}
+                    <strong>Why this happens:</strong> {coachSummary.whyThisHappens}
                   </p>
-                  {coachSummary.recommendedDrills.length > 0 && (
-                    <>
-                      <p>
-                        <strong>Recommended drills:</strong>
-                      </p>
-                      <ul>
-                        {coachSummary.recommendedDrills.map((drill) => (
-                          <li key={`${drill.name}-${drill.youtubeUrl}`}>
-                            <strong>{drill.name}:</strong> {drill.why} {' '}
-                            <a href={drill.youtubeUrl} target="_blank" rel="noreferrer">
-                              YouTube
-                            </a>
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
+                  <p>
+                    <strong>What to do next:</strong> {coachSummary.whatToDoNext}
+                  </p>
+                  <p>
+                    <strong>On-course tip:</strong> {coachSummary.onCourseTip}
+                  </p>
                 </>
               )}
             </>
@@ -1476,50 +1581,6 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
                 </li>
               ))}
             </ul>
-          )}
-          {sessionView === 'coach' && (
-            <>
-              <h3>Log Completed Drill</h3>
-              <div className="summary-grid">
-                <article>
-                  <h3>Drill Name</h3>
-                  <input value={drillName} onChange={(event) => setDrillName(event.target.value)} placeholder="e.g. Alignment gate" />
-                </article>
-                <article>
-                  <h3>Duration (min)</h3>
-                  <input
-                    type="number"
-                    min={1}
-                    max={180}
-                    value={drillDurationMins}
-                    onChange={(event) => setDrillDurationMins(event.target.value)}
-                  />
-                </article>
-                <article>
-                  <h3>Outcome (1-5)</h3>
-                  <input
-                    type="number"
-                    min={1}
-                    max={5}
-                    value={drillOutcome}
-                    onChange={(event) => setDrillOutcome(event.target.value)}
-                  />
-                </article>
-              </div>
-              <p>
-                <input
-                  value={drillNotes}
-                  onChange={(event) => setDrillNotes(event.target.value)}
-                  placeholder="Optional notes about what worked"
-                />
-              </p>
-              <p>
-                <button type="button" onClick={() => void logDrill()}>
-                  Log Drill
-                </button>
-                {drillStatus ? ` ${drillStatus}` : ''}
-              </p>
-            </>
           )}
         </CollapsibleSection>
       )}
