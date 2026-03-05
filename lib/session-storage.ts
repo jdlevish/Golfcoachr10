@@ -1,11 +1,24 @@
 import { z } from 'zod';
-import type { ShotRecord } from '@/lib/r10';
+import type { ClubDeterministicStats, ShotRecord } from '@/lib/r10';
 
 export type StoredShot = Omit<ShotRecord, 'raw'>;
+
+export type StoredDerivedStats = {
+  version: 1;
+  computedAt: string;
+  perClubStats: Record<
+    string,
+    Pick<
+      ClubDeterministicStats,
+      'count' | 'carryMedian' | 'carryStdDev' | 'offlineStdDev' | 'smashMedian' | 'faceToPathMean' | 'confidence'
+    >
+  >;
+};
 
 export type StoredSessionPayload = {
   version: number;
   sessionDate?: string;
+  derivedStats?: StoredDerivedStats;
   shots: StoredShot[];
 };
 
@@ -38,6 +51,23 @@ export const storedShotSchema = z.object({
 export const storedSessionPayloadSchema = z.object({
   version: z.number().int().positive(),
   sessionDate: z.string().datetime().optional(),
+  derivedStats: z
+    .object({
+      version: z.literal(1),
+      computedAt: z.string().datetime(),
+      perClubStats: z.record(
+        z.object({
+          count: z.number().int().nonnegative(),
+          carryMedian: z.number().nullable(),
+          carryStdDev: z.number().nullable(),
+          offlineStdDev: z.number().nullable(),
+          smashMedian: z.number().nullable(),
+          faceToPathMean: z.number().nullable(),
+          confidence: z.enum(['High', 'Medium', 'Low'])
+        })
+      )
+    })
+    .optional(),
   shots: z.array(storedShotSchema)
 });
 
