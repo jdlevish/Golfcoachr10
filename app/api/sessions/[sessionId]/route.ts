@@ -4,6 +4,7 @@ import { buildRuleInsights, buildTrendDeltas } from '@/lib/analysis';
 import { buildCoachV2Plan } from '@/lib/coach-v2';
 import { prisma } from '@/lib/prisma';
 import { buildCoachPlan, buildGappingLadder, summarizeSession } from '@/lib/r10';
+import { compareSessions } from '@/lib/session-compare';
 import { parseStoredSessionPayload, toShotRecords } from '@/lib/session-storage';
 
 type RouteContext = {
@@ -60,9 +61,25 @@ export async function GET(_request: Request, context: RouteContext) {
     orderBy: { importedAt: 'desc' },
     select: {
       id: true,
+      importedAt: true,
       notes: true
     }
   });
+  const effectiveDateFor = (sessionDate: string | undefined, fallback: Date) =>
+    sessionDate && !Number.isNaN(new Date(sessionDate).getTime()) ? new Date(sessionDate) : fallback;
+  const previousSessionCandidate = peerSessions
+    .map((session) => {
+      const parsed = parseStoredSessionPayload(session.notes);
+      if (!parsed) return null;
+      return {
+        id: session.id,
+        date: effectiveDateFor(parsed.sessionDate, session.importedAt),
+        shots: toShotRecords(parsed.shots)
+      };
+    })
+    .filter((session): session is NonNullable<typeof session> => session !== null)
+    .filter((session) => session.date < effectiveDate)
+    .sort((a, b) => b.date.getTime() - a.date.getTime())[0] ?? null;
   const parsedPeerSessions = peerSessions
     .map((session) => {
       const payload = parseStoredSessionPayload(session.notes);
@@ -90,6 +107,18 @@ export async function GET(_request: Request, context: RouteContext) {
     }
   });
   const ruleInsights = buildRuleInsights(shots, summary, gappingLadder, drillLogs);
+  const comparison = compareSessions(
+    previousSessionCandidate
+      ? {
+          sessionId: previousSessionCandidate.id,
+          shots: previousSessionCandidate.shots
+        }
+      : null,
+    {
+      sessionId: entry.id,
+      shots
+    }
+  );
 
   return NextResponse.json({
     id: entry.id,
@@ -102,7 +131,8 @@ export async function GET(_request: Request, context: RouteContext) {
     coachPlan,
     coachV2Plan,
     trendDeltas,
-    ruleInsights
+    ruleInsights,
+    comparison
   });
 }
 

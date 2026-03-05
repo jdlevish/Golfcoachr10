@@ -38,6 +38,26 @@ type SessionDetail = {
   coachV2Plan: CoachV2Plan | null;
   trendDeltas: TrendDeltas | null;
   ruleInsights: RuleInsight[];
+  comparison: {
+    comparedToSessionId: string | null;
+    overall: {
+      improved: Array<{ metric: string; previous: number; current: number; delta: number; unit: string }>;
+      regressed: Array<{ metric: string; previous: number; current: number; delta: number; unit: string }>;
+    };
+    clubs: Record<
+      string,
+      {
+        improved: Array<{ metric: string; previous: number; current: number; delta: number; unit: string }>;
+        regressed: Array<{ metric: string; previous: number; current: number; delta: number; unit: string }>;
+        keyDeltaSummary: string;
+      }
+    >;
+    headlines: string[];
+    likelyCause: {
+      type: 'face' | 'path' | 'strike' | 'variance';
+      explanation: string;
+    };
+  };
 };
 
 type AllTimePayload = {
@@ -107,6 +127,18 @@ const formatBreakdownTerms = (terms: Record<string, number | null>) =>
   Object.entries(terms)
     .map(([key, value]) => `${key}=${typeof value === 'number' ? value.toFixed(2) : 'n/a'}`)
     .join(', ') || 'n/a';
+const normalizeClubToken = (club: string) => {
+  const cleaned = club.trim().toLowerCase().replace(/\s+/g, ' ');
+  const shortIronMatch = cleaned.match(/^(\d+)i$/);
+  if (shortIronMatch) return `${shortIronMatch[1]} iron`;
+  const spacedShortIronMatch = cleaned.match(/^(\d+)\s+i$/);
+  if (spacedShortIronMatch) return `${spacedShortIronMatch[1]} iron`;
+  if (cleaned === 'pw') return 'pitching wedge';
+  if (cleaned === 'sw') return 'sand wedge';
+  if (cleaned === 'gw') return 'gap wedge';
+  if (cleaned === 'lw') return 'lob wedge';
+  return cleaned;
+};
 
 const resolveKeyMetricLabel = (constraintLabel: string) => {
   const normalized = constraintLabel.toLowerCase();
@@ -407,6 +439,20 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
     selectedPrimaryMetricValue ?? selectedSession?.coachV2Plan?.primaryConstraint.currentValue ?? null;
   const sessionPrimaryTarget =
     selectedSession?.coachV2Plan?.practicePlan.goal ?? 'Reduce this metric by 15-20% over the next 3 sessions.';
+  const primaryClubComparison = useMemo(() => {
+    if (!selectedSession?.comparison || !sessionPrimaryClub) return null;
+    const normalizedPrimary = normalizeClubToken(sessionPrimaryClub);
+    const byExact = selectedSession.comparison.clubs[sessionPrimaryClub];
+    if (byExact) return { club: sessionPrimaryClub, summary: byExact.keyDeltaSummary };
+    const byNormalizedEntry = Object.entries(selectedSession.comparison.clubs).find(
+      ([club]) => normalizeClubToken(club) === normalizedPrimary
+    );
+    if (!byNormalizedEntry) return null;
+    return {
+      club: byNormalizedEntry[0],
+      summary: byNormalizedEntry[1].keyDeltaSummary
+    };
+  }, [selectedSession?.comparison, sessionPrimaryClub]);
   const allTimeDiagnosis = useMemo<CoachDiagnosis | null>(() => {
     if (!allTime?.coachV2Plan) return null;
     const primary = allTime.coachV2Plan.primaryConstraint;
@@ -1473,6 +1519,29 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
           )}
           {sessionView === 'coach' && selectedSession.coachV2Plan && (
             <>
+              <article className="coach-card">
+                <h3>Compared To Last Session</h3>
+                {selectedSession.comparison.comparedToSessionId ? (
+                  <>
+                    <ul className="insights-list">
+                      {selectedSession.comparison.headlines.slice(0, 3).map((headline) => (
+                        <li key={headline}>{headline}</li>
+                      ))}
+                    </ul>
+                    <p>
+                      <strong>Likely cause ({selectedSession.comparison.likelyCause.type}):</strong>{' '}
+                      {selectedSession.comparison.likelyCause.explanation}
+                    </p>
+                    {primaryClubComparison && (
+                      <p>
+                        <strong>{primaryClubComparison.club} focus:</strong> {primaryClubComparison.summary}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="helper-text">No prior session available to compare yet.</p>
+                )}
+              </article>
               {selectedSessionDiagnosis && (
                 <>
                   <h3>Coach: Primary Issue</h3>
