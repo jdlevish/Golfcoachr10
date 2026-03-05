@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 type ClubTrendRange = '7d' | '30d' | '90d' | '1y' | 'all';
 
@@ -136,6 +137,7 @@ function TrendChartCard({
 }
 
 export default function TrendsPageShell() {
+  const searchParams = useSearchParams();
   const [clubs, setClubs] = useState<string[]>([]);
   const [selectedClub, setSelectedClub] = useState('');
   const [range, setRange] = useState<ClubTrendRange>('90d');
@@ -152,11 +154,16 @@ export default function TrendsPageShell() {
         return;
       }
       const payload = (await response.json()) as { clubs: string[] };
+      const fromQuery = searchParams.get('club')?.trim();
       setClubs(payload.clubs ?? []);
-      setSelectedClub((current) => current || payload.clubs?.[0] || '');
+      setSelectedClub((current) => {
+        if (current) return current;
+        if (fromQuery && payload.clubs?.includes(fromQuery)) return fromQuery;
+        return payload.clubs?.[0] || '';
+      });
     };
     void loadClubs();
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!selectedClub) {
