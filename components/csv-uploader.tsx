@@ -32,15 +32,30 @@ type CsvUploaderProps = {
 };
 
 type UploadView = 'import' | 'coach' | 'gapping' | 'deepdive';
+type ConfidenceLabel = 'High' | 'Medium' | 'Low';
 
 type LadderRow = {
   club: string;
+  shotCount: number;
   carryMedian: number;
   p10Carry: number | null;
   p90Carry: number | null;
   gapToNext: number | null;
   status: 'overlap' | 'compressed' | 'healthy' | 'cliff' | null;
   warning: string | null;
+  confidence: ConfidenceLabel;
+};
+
+const confidenceFromCount = (count: number): ConfidenceLabel => {
+  if (count >= 25) return 'High';
+  if (count >= 12) return 'Medium';
+  return 'Low';
+};
+
+const confidenceClassName = (confidence: ConfidenceLabel) => {
+  if (confidence === 'High') return 'confidence-badge confidence-high';
+  if (confidence === 'Medium') return 'confidence-badge confidence-medium';
+  return 'confidence-badge confidence-low';
 };
 
 export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
@@ -130,6 +145,36 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
       .slice(0, 3) as Array<[Shape, number]>;
   }, [missPatterns]);
 
+  const sessionDateLabel = useMemo(() => {
+    if (!sessionDate) return 'Date unavailable';
+    return new Date(sessionDate).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  }, [sessionDate]);
+
+  const missingMetricLabels = useMemo(() => {
+    if (!importReport) return [] as string[];
+    const labels: Array<[string, string]> = [
+      ['carryYds', 'Carry Distance'],
+      ['sideYds', 'Offline / Side Deviation'],
+      ['totalYds', 'Total Distance'],
+      ['ballSpeedMph', 'Ball Speed'],
+      ['launchAngleDeg', 'Launch Angle'],
+      ['spinRpm', 'Spin Rate'],
+      ['clubType', 'Club Type']
+    ];
+    return labels
+      .filter(([key]) => importReport.missingColumns.includes(key))
+      .map(([, label]) => label);
+  }, [importReport]);
+
+  const missPatternConfidence = useMemo(
+    () => confidenceFromCount(analysisShots.length),
+    [analysisShots.length]
+  );
+
   const primaryMetricLabel = useMemo(() => {
     const primary = coachDiagnosis.primary;
     if (primary.constraintType === 'DirectionConsistency') return 'offlineStdDev';
@@ -144,12 +189,21 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
     const ranked = [...summary.clubs]
       .map((club) => ({
         club: club.displayName,
+        shotCount: club.shots,
         carryMedian: club.medianCarryYds ?? club.avgCarryYds,
         p10Carry: club.p10CarryYds,
         p90Carry: club.p90CarryYds
       }))
-      .filter((club): club is { club: string; carryMedian: number; p10Carry: number | null; p90Carry: number | null } =>
-        club.carryMedian !== null
+      .filter(
+        (
+          club
+        ): club is {
+          club: string;
+          shotCount: number;
+          carryMedian: number;
+          p10Carry: number | null;
+          p90Carry: number | null;
+        } => club.carryMedian !== null
       )
       .sort((a, b) => b.carryMedian - a.carryMedian);
 
@@ -176,7 +230,9 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
         p90Carry: current.p90Carry,
         gapToNext,
         status,
-        warning
+        warning,
+        shotCount: current.shotCount,
+        confidence: confidenceFromCount(current.shotCount)
       });
     }
     return rows;
@@ -334,6 +390,21 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
           <span>Choose an exported range session to parse and normalize.</span>
         </label>
 
+        {!shots.length && !importReport && !error && (
+          <article className="coach-card empty-state-card">
+            <h3>No CSV Loaded Yet</h3>
+            <p>
+              Demo flow: export a Garmin R10 range session CSV, upload it here, then use Coach/Gapping/Deep Dive tabs to
+              review your session.
+            </p>
+            <ul>
+              <li>Step 1: Export your R10 session CSV from Garmin Golf.</li>
+              <li>Step 2: Upload the file in this panel.</li>
+              <li>Step 3: Save the session to history once review looks correct.</li>
+            </ul>
+          </article>
+        )}
+
         {error && <p className="error">{error}</p>}
 
         {importReport && (
@@ -382,33 +453,61 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
             )}
           </details>
         )}
+
+        {importReport && missingMetricLabels.length > 0 && (
+          <article className="coach-card">
+            <h3>Unavailable Metrics</h3>
+            <p className="helper-text">Some analytics are limited because these CSV fields are missing:</p>
+            <div className="miss-chip-row" aria-label="Unavailable metrics">
+              {missingMetricLabels.map((label) => (
+                <span key={label} className="miss-chip miss-chip-muted">
+                  {label}
+                </span>
+              ))}
+            </div>
+          </article>
+        )}
       </section>
 
       {shots.length > 0 && (
         <section className="auth-panel">
-          <div className="flow-tabs" role="tablist" aria-label="Session flow screens">
-            <button
-              type="button"
-              className={view === 'coach' ? 'flow-tab active' : 'flow-tab'}
-              onClick={() => navigate('coach')}
-            >
-              Coach
-            </button>
-            <button
-              type="button"
-              className={view === 'gapping' ? 'flow-tab active' : 'flow-tab'}
-              onClick={() => navigate('gapping')}
-            >
-              Gapping Ladder
-            </button>
-            <button
-              type="button"
-              className={view === 'deepdive' ? 'flow-tab active' : 'flow-tab'}
-              onClick={() => navigate('deepdive')}
-            >
-              Deep Dive
-            </button>
+          <div className="sticky-session-nav">
+            <section className="session-sticky-header" aria-label="Session context">
+              <div>
+                <p className="eyebrow">Session Context</p>
+                <h3>{sourceFileName ?? 'Uploaded Session'}</h3>
+              </div>
+              <div className="session-meta-row">
+                <span className="session-meta-pill">Date: {sessionDateLabel}</span>
+                <span className="session-meta-pill">Shots: {analysisShots.length}</span>
+              </div>
+            </section>
+
+            <div className="flow-tabs" role="tablist" aria-label="Session flow screens">
+              <button
+                type="button"
+                className={view === 'coach' ? 'flow-tab active' : 'flow-tab'}
+                onClick={() => navigate('coach')}
+              >
+                Coach
+              </button>
+              <button
+                type="button"
+                className={view === 'gapping' ? 'flow-tab active' : 'flow-tab'}
+                onClick={() => navigate('gapping')}
+              >
+                Gapping Ladder
+              </button>
+              <button
+                type="button"
+                className={view === 'deepdive' ? 'flow-tab active' : 'flow-tab'}
+                onClick={() => navigate('deepdive')}
+              >
+                Deep Dive
+              </button>
+            </div>
           </div>
+          <p className="helper-text">Navigate the session using Coach, Gapping Ladder, and Deep Dive.</p>
 
           <div className="persist-actions">
             <button type="button" onClick={saveSession} disabled={savingSession}>
@@ -422,9 +521,29 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
 
           {view === 'coach' && (
             <section className="stack" aria-label="Coach screen">
+              <article className="coach-card">
+                <h3>Most Common Miss</h3>
+                <div className="miss-chip-row">
+                  {topThreeShapes.length > 0 ? (
+                    topThreeShapes.map(([shape, pct]) => (
+                      <span key={shape} className="miss-chip">
+                        {shape}: {pct.toFixed(1)}%
+                      </span>
+                    ))
+                  ) : (
+                    <span className="miss-chip miss-chip-muted">No miss pattern available</span>
+                  )}
+                </div>
+              </article>
+
               <section className="summary-grid" aria-label="Coach landing card">
                 <article>
-                  <h3>Primary Issue</h3>
+                  <h3>
+                    Primary Issue{' '}
+                    <span className={confidenceClassName(coachDiagnosis.primary.confidence)}>
+                      {coachDiagnosis.primary.confidence}
+                    </span>
+                  </h3>
                   <p>{coachDiagnosis.primary.constraintType}</p>
                 </article>
                 <article>
@@ -432,13 +551,20 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
                   <p>{coachDiagnosis.primary.club}</p>
                 </article>
                 <article>
-                  <h3>Key Metric</h3>
+                  <h3>
+                    Key Metric{' '}
+                    <span className={confidenceClassName(coachDiagnosis.primary.confidence)}>
+                      {coachDiagnosis.primary.confidence}
+                    </span>
+                  </h3>
                   <p>
                     {primaryMetricLabel}: {typeof primaryMetricValue === 'number' ? primaryMetricValue.toFixed(2) : 'n/a'}
                   </p>
                 </article>
                 <article>
-                  <h3>Target</h3>
+                  <h3>
+                    Target <span className={confidenceClassName(missPatternConfidence)}>{missPatternConfidence}</span>
+                  </h3>
                   <p>Reduce 15-20% over 3 sessions</p>
                 </article>
               </section>
@@ -461,7 +587,10 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
               </article>
 
               <article className="coach-card">
-                <h3>Miss Pattern Summary</h3>
+                <h3>
+                  Miss Pattern Summary{' '}
+                  <span className={confidenceClassName(missPatternConfidence)}>{missPatternConfidence}</span>
+                </h3>
                 <p>
                   Most common miss: <strong>{missPatterns.overall.topShape}</strong>
                 </p>
@@ -594,7 +723,12 @@ export default function CsvUploader({ onSessionSaved }: CsvUploaderProps) {
               ) : (
                 ladderRows.map((row) => (
                   <article key={row.club} className="coach-card">
-                    <h3>{row.club}</h3>
+                    <h3>
+                      {row.club} <span className={confidenceClassName(row.confidence)}>{row.confidence}</span>
+                    </h3>
+                    <p>
+                      <strong>Shots:</strong> {row.shotCount}
+                    </p>
                     <p>
                       <strong>Carry Median:</strong> {formatValue(row.carryMedian, ' yds')}
                     </p>

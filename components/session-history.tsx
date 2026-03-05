@@ -56,6 +56,17 @@ type CoachProfile = {
   updatedAt: string | null;
 };
 
+type ClubTrendPoint = {
+  sessionId: string;
+  date: string;
+  club: string;
+  carryMedian: number | null;
+  carryStdDev: number | null;
+  offlineStdDev: number | null;
+  smashMedian: number | null;
+  faceToPathMean: number | null;
+};
+
 type SessionHistoryProps = {
   refreshKey: number;
 };
@@ -221,11 +232,12 @@ type CollapsibleSectionProps = {
   isOpen: boolean;
   onToggle: () => void;
   children: ReactNode;
+  className?: string;
 };
 
-function CollapsibleSection({ title, isOpen, onToggle, children }: CollapsibleSectionProps) {
+function CollapsibleSection({ title, isOpen, onToggle, children, className }: CollapsibleSectionProps) {
   return (
-    <section className="auth-panel">
+    <section className={`auth-panel ${className ?? ''}`.trim()}>
       <div className="section-header">
         <h3>{title}</h3>
         <button type="button" onClick={onToggle}>
@@ -289,6 +301,10 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
   const [shotSortDirection, setShotSortDirection] = useState<'asc' | 'desc'>('asc');
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
+  const [clubTrendRange, setClubTrendRange] = useState(12);
+  const [clubTrendSeries, setClubTrendSeries] = useState<ClubTrendPoint[]>([]);
+  const [clubTrendLoading, setClubTrendLoading] = useState(false);
+  const [clubTrendError, setClubTrendError] = useState<string | null>(null);
 
   const availableSessionClubs = useMemo(() => {
     if (!selectedSession) return [];
@@ -455,6 +471,50 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
     () => (selectedSessionDiagnosis ? generateDeterministicPlan(selectedSessionDiagnosis, 40) : null),
     [selectedSessionDiagnosis]
   );
+  const trendClubQuery = useMemo(() => {
+    if (fullDataClubFilter !== 'all') return fullDataClubFilter;
+    return selectedSessionDiagnosis?.primary.club ?? availableSessionClubs[0] ?? null;
+  }, [availableSessionClubs, fullDataClubFilter, selectedSessionDiagnosis]);
+
+  useEffect(() => {
+    if (!selectedSession || sessionView !== 'deepdive' || !trendClubQuery) {
+      setClubTrendSeries([]);
+      setClubTrendError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const loadTrend = async () => {
+      setClubTrendLoading(true);
+      setClubTrendError(null);
+      const params = new URLSearchParams({
+        club: trendClubQuery,
+        range: String(clubTrendRange)
+      });
+      const response = await fetch(`/api/sessions/trends/club?${params.toString()}`, {
+        cache: 'no-store',
+        signal: controller.signal
+      }).catch(() => null);
+
+      if (!response || !response.ok) {
+        if (!controller.signal.aborted) {
+          setClubTrendSeries([]);
+          setClubTrendError('Could not load club trend series.');
+          setClubTrendLoading(false);
+        }
+        return;
+      }
+
+      const payload = (await response.json()) as { series: ClubTrendPoint[] };
+      if (!controller.signal.aborted) {
+        setClubTrendSeries(payload.series ?? []);
+        setClubTrendLoading(false);
+      }
+    };
+
+    void loadTrend();
+    return () => controller.abort();
+  }, [clubTrendRange, selectedSession, sessionView, trendClubQuery]);
 
   useEffect(() => {
     const load = async () => {
@@ -653,7 +713,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               </button>
             ))}
           </div>
-          <div className="flow-tabs" role="tablist" aria-label="All-time insight tabs">
+          <div className="flow-tabs sticky-flow-tabs" role="tablist" aria-label="All-time insight tabs">
             <button
               type="button"
               className={allTimeView === 'coach' ? 'flow-tab active' : 'flow-tab'}
@@ -1060,6 +1120,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
           title="Session Detail"
           isOpen={showSessionDetail}
           onToggle={() => setShowSessionDetail((value) => !value)}
+          className="session-detail-sticky"
         >
           <p>
             {formatDateTime(selectedSession.sessionDate)} |{' '}
@@ -1073,7 +1134,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
             Clubs tracked: {selectedSession.summary.clubs.length} | Gap alerts:{' '}
             {selectedSession.gappingLadder.rows.filter((row) => row.gapStatus === 'overlap' || row.gapStatus === 'cliff').length}
           </p>
-          <div className="flow-tabs" role="tablist" aria-label="Session insight tabs">
+          <div className="flow-tabs sticky-flow-tabs" role="tablist" aria-label="Session insight tabs">
             <button
               type="button"
               className={sessionView === 'coach' ? 'flow-tab active' : 'flow-tab'}
@@ -1133,7 +1194,58 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
                     </option>
                   ))}
                 </select>
+                <label htmlFor="club-trend-range">Trend range</label>
+                <select
+                  id="club-trend-range"
+                  value={clubTrendRange}
+                  onChange={(event) => setClubTrendRange(Number(event.target.value))}
+                >
+                  <option value={5}>Last 5</option>
+                  <option value={10}>Last 10</option>
+                  <option value={12}>Last 12</option>
+                  <option value={20}>Last 20</option>
+                </select>
               </div>
+
+              <article className="coach-card">
+                <h3>Club Trend Series</h3>
+                <p className="helper-text">
+                  {trendClubQuery ? `Using club: ${trendClubQuery}` : 'Choose a club filter to load trend data.'}
+                </p>
+                {clubTrendLoading && <p className="helper-text">Loading trend series...</p>}
+                {clubTrendError && <p className="error">{clubTrendError}</p>}
+                {!clubTrendLoading && !clubTrendError && clubTrendSeries.length === 0 && trendClubQuery && (
+                  <p className="helper-text">No derived trend stats found for this club in the selected range.</p>
+                )}
+                {!clubTrendLoading && clubTrendSeries.length > 0 && (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Club</th>
+                        <th>Carry Median</th>
+                        <th>Carry Std Dev</th>
+                        <th>Offline Std Dev</th>
+                        <th>Smash Median</th>
+                        <th>Face To Path Mean</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clubTrendSeries.map((point) => (
+                        <tr key={point.sessionId}>
+                          <td data-label="Date">{formatDateTime(point.date)}</td>
+                          <td data-label="Club">{point.club}</td>
+                          <td data-label="Carry Median">{formatValue(point.carryMedian, ' yds')}</td>
+                          <td data-label="Carry Std Dev">{formatValue(point.carryStdDev, ' yds')}</td>
+                          <td data-label="Offline Std Dev">{formatValue(point.offlineStdDev, ' yds')}</td>
+                          <td data-label="Smash Median">{formatValue(point.smashMedian)}</td>
+                          <td data-label="Face To Path Mean">{formatValue(point.faceToPathMean, ' deg')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </article>
               <div className="metrics-picker" role="group" aria-label="Visible metrics">
                 <span>Visible metrics</span>
                 {metricKeys.map((key) => (
