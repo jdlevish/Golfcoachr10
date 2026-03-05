@@ -4,6 +4,9 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { parseStoredSessionPayload, toShotRecords, storedShotSchema } from '@/lib/session-storage';
 import { computeMissPatterns, computeStats, summarizeSession, toNormalizedShotsFromShotRecords } from '@/lib/r10';
+import { getUserClubAliasMap } from '@/lib/club-aliases';
+import { resolveClubNormalization } from '@/lib/club-normalization';
+import { backfillUserSessionsClubNormalization } from '@/lib/session-club-normalization';
 
 const createSessionSchema = z.object({
   sourceFile: z.string().trim().min(1).max(255).optional(),
@@ -24,9 +27,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid session payload.' }, { status: 400 });
   }
 
+  const aliasMap = await getUserClubAliasMap(userId);
+  const normalizedStoredShots = parsed.data.shots.map((shot) => {
+    const resolved = resolveClubNormalization(shot.clubRaw ?? shot.clubType, aliasMap);
+    const clubNormalized = resolved.clubNormalized;
+    return {
+      ...shot,
+      clubRaw: resolved.clubRaw,
+      clubNormalized,
+      clubType: clubNormalized,
+      displayClub: shot.clubName ? `${clubNormalized} (${shot.clubName})` : clubNormalized
+    };
+  });
+
   const saved = await prisma.shotSession.create({
     data: (() => {
-      const normalizedShots = toNormalizedShotsFromShotRecords(toShotRecords(parsed.data.shots));
+      const normalizedShots = toNormalizedShotsFromShotRecords(toShotRecords(normalizedStoredShots));
       const deterministic = computeStats(normalizedShots);
       const missPatterns = computeMissPatterns(normalizedShots);
       return {
@@ -54,7 +70,7 @@ export async function POST(request: Request) {
               ])
             )
           },
-          shots: parsed.data.shots
+          shots: normalizedStoredShots
         })
       };
     })(),
@@ -73,6 +89,8 @@ export async function GET() {
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  await backfillUserSessionsClubNormalization(userId);
 
   const sessions = await prisma.shotSession.findMany({
     where: { userId },

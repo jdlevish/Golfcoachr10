@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 import { buildCoachPlan, buildGappingLadder, summarizeSession } from '@/lib/r10';
 import { compareSessions } from '@/lib/session-compare';
 import { parseStoredSessionPayload, toShotRecords } from '@/lib/session-storage';
+import { backfillUserSessionsClubNormalization } from '@/lib/session-club-normalization';
 
 type RouteContext = {
   params: {
@@ -19,6 +20,7 @@ export async function GET(_request: Request, context: RouteContext) {
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  await backfillUserSessionsClubNormalization(userId);
 
   const sessionId = context.params.sessionId;
   const entry = await prisma.shotSession.findFirst({

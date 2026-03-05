@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { computeMissPatterns, computeStats, toNormalizedShotsFromShotRecords } from '@/lib/r10';
+import { resolveClubNormalization } from '@/lib/club-normalization';
 import {
   parseStoredSessionPayload,
   toShotRecords,
@@ -22,16 +23,7 @@ export type ClubTrendPoint = {
 export type ClubTrendRange = '7d' | '30d' | '90d' | '1y' | 'all';
 
 export const normalizeClubToken = (club: string) => {
-  const cleaned = club.trim().toLowerCase().replace(/\s+/g, ' ');
-  const shortIronMatch = cleaned.match(/^(\d+)i$/);
-  if (shortIronMatch) return `${shortIronMatch[1]} iron`;
-  const spacedShortIronMatch = cleaned.match(/^(\d+)\s+i$/);
-  if (spacedShortIronMatch) return `${spacedShortIronMatch[1]} iron`;
-  if (cleaned === 'pw') return 'pitching wedge';
-  if (cleaned === 'sw') return 'sand wedge';
-  if (cleaned === 'gw') return 'gap wedge';
-  if (cleaned === 'lw') return 'lob wedge';
-  return cleaned;
+  return resolveClubNormalization(club, new Map()).clubNormalized;
 };
 
 const toRangeStart = (range: number | ClubTrendRange): Date | null => {

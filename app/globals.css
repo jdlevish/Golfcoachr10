@@ -314,6 +314,16 @@ td {
   flex-wrap: wrap;
 }
 
+.inline-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.inline-actions input {
+  min-width: 8rem;
+}
+
 .section-header {
   display: flex;
   align-items: center;
