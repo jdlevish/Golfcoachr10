@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { parseStoredSessionPayload, toShotRecords, storedShotSchema } from '@/lib/session-storage';
-import { computeStats, summarizeSession, toNormalizedShotsFromShotRecords } from '@/lib/r10';
+import { computeMissPatterns, computeStats, summarizeSession, toNormalizedShotsFromShotRecords } from '@/lib/r10';
 
 const createSessionSchema = z.object({
   sourceFile: z.string().trim().min(1).max(255).optional(),
@@ -25,18 +25,21 @@ export async function POST(request: Request) {
   }
 
   const saved = await prisma.shotSession.create({
-    data: {
-      userId,
-      sourceFile: parsed.data.sourceFile ?? null,
-      notes: JSON.stringify({
-        version: 3,
-        sessionDate: parsed.data.sessionDate,
-        derivedStats: {
-          version: 1,
-          computedAt: new Date().toISOString(),
-          perClubStats: Object.fromEntries(
-            Object.entries(computeStats(toNormalizedShotsFromShotRecords(toShotRecords(parsed.data.shots))).perClubStats).map(
-              ([club, stats]) => [
+    data: (() => {
+      const normalizedShots = toNormalizedShotsFromShotRecords(toShotRecords(parsed.data.shots));
+      const deterministic = computeStats(normalizedShots);
+      const missPatterns = computeMissPatterns(normalizedShots);
+      return {
+        userId,
+        sourceFile: parsed.data.sourceFile ?? null,
+        notes: JSON.stringify({
+          version: 3,
+          sessionDate: parsed.data.sessionDate,
+          derivedStats: {
+            version: 1,
+            computedAt: new Date().toISOString(),
+            perClubStats: Object.fromEntries(
+              Object.entries(deterministic.perClubStats).map(([club, stats]) => [
                 club,
                 {
                   count: stats.count,
@@ -45,15 +48,16 @@ export async function POST(request: Request) {
                   offlineStdDev: stats.offlineStdDev,
                   smashMedian: stats.smashMedian,
                   faceToPathMean: stats.faceToPathMean,
-                  confidence: stats.confidence
+                  confidence: stats.confidence,
+                  topMissShape: missPatterns.perClub[club]?.topShape ?? null
                 }
-              ]
+              ])
             )
-          )
-        },
-        shots: parsed.data.shots
-      })
-    },
+          },
+          shots: parsed.data.shots
+        })
+      };
+    })(),
     select: {
       id: true,
       importedAt: true

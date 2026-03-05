@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { getClubTrendSeries } from '@/lib/club-trends';
+import { getClubTrendSeries, type ClubTrendRange } from '@/lib/club-trends';
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -12,7 +12,12 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const club = url.searchParams.get('club')?.trim() ?? '';
   const rangeParam = url.searchParams.get('range');
-  const range = rangeParam ? Number(rangeParam) : 12;
+  const range: number | ClubTrendRange =
+    rangeParam === '7d' || rangeParam === '30d' || rangeParam === '90d' || rangeParam === '1y' || rangeParam === 'all'
+      ? rangeParam
+      : rangeParam
+        ? Number(rangeParam)
+        : 'all';
 
   if (!club) {
     return NextResponse.json({ error: 'club is required' }, { status: 400 });

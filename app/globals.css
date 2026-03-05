@@ -549,6 +549,44 @@ td {
   margin: 0 0 0.5rem;
 }
 
+.trend-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.45rem;
+}
+
+.trend-card-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.trend-card-meta {
+  font-size: 0.85rem;
+}
+
+.trends-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.6rem;
+}
+
+.trends-controls label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.trends-controls select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
 .viz-card svg {
   width: 100%;
   height: auto;
@@ -747,5 +785,9 @@ td {
 
   .viz-card.large svg {
     height: 260px;
+  }
+
+  .trends-controls {
+    grid-template-columns: 1fr;
   }
 }
