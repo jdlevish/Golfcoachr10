@@ -19,7 +19,7 @@ export default async function HomePage() {
         <section className="auth-panel">
           <p>You are signed in as {session.user.email}.</p>
           <p>
-            <Link href="/dashboard">Open dashboard</Link>
+            <Link href="/dashboard">Open dashboard</Link> | <Link href="/trends">Open trends</Link>
           </p>
         </section>
       ) : (

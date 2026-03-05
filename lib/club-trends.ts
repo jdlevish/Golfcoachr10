@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { computeStats, toNormalizedShotsFromShotRecords } from '@/lib/r10';
+import { computeMissPatterns, computeStats, toNormalizedShotsFromShotRecords } from '@/lib/r10';
 import {
   parseStoredSessionPayload,
   toShotRecords,
@@ -16,9 +16,12 @@ export type ClubTrendPoint = {
   offlineStdDev: number | null;
   smashMedian: number | null;
   faceToPathMean: number | null;
+  topMissShape: string | null;
 };
 
-const normalizeClubToken = (club: string) => {
+export type ClubTrendRange = '7d' | '30d' | '90d' | '1y' | 'all';
+
+export const normalizeClubToken = (club: string) => {
   const cleaned = club.trim().toLowerCase().replace(/\s+/g, ' ');
   const shortIronMatch = cleaned.match(/^(\d+)i$/);
   if (shortIronMatch) return `${shortIronMatch[1]} iron`;
@@ -31,9 +34,32 @@ const normalizeClubToken = (club: string) => {
   return cleaned;
 };
 
+const toRangeStart = (range: number | ClubTrendRange): Date | null => {
+  if (typeof range === 'number') return null;
+  if (range === 'all') return null;
+  const now = new Date();
+  const start = new Date(now);
+  if (range === '7d') {
+    start.setDate(now.getDate() - 7);
+    return start;
+  }
+  if (range === '30d') {
+    start.setDate(now.getDate() - 30);
+    return start;
+  }
+  if (range === '90d') {
+    start.setDate(now.getDate() - 90);
+    return start;
+  }
+  start.setFullYear(now.getFullYear() - 1);
+  return start;
+};
+
 const deriveStatsFromPayload = (payload: StoredSessionPayload): StoredDerivedStats => {
   const shots = toShotRecords(payload.shots);
-  const deterministic = computeStats(toNormalizedShotsFromShotRecords(shots));
+  const normalizedShots = toNormalizedShotsFromShotRecords(shots);
+  const deterministic = computeStats(normalizedShots);
+  const missPatterns = computeMissPatterns(normalizedShots);
   const perClubStats = Object.fromEntries(
     Object.entries(deterministic.perClubStats).map(([club, stats]) => [
       club,
@@ -44,7 +70,8 @@ const deriveStatsFromPayload = (payload: StoredSessionPayload): StoredDerivedSta
         offlineStdDev: stats.offlineStdDev,
         smashMedian: stats.smashMedian,
         faceToPathMean: stats.faceToPathMean,
-        confidence: stats.confidence
+        confidence: stats.confidence,
+        topMissShape: missPatterns.perClub[club]?.topShape ?? null
       }
     ])
   );
@@ -95,10 +122,11 @@ const ensureDerivedStats = async (session: {
 export async function getClubTrendSeries(
   userId: string,
   clubNormalized: string,
-  range: number
+  range: number | ClubTrendRange
 ): Promise<ClubTrendPoint[]> {
   const normalizedClub = normalizeClubToken(clubNormalized);
-  const safeRange = Number.isFinite(range) && range > 0 ? Math.floor(range) : 12;
+  const safeRange = typeof range === 'number' && Number.isFinite(range) && range > 0 ? Math.floor(range) : 12;
+  const rangeStart = toRangeStart(range);
 
   const sessions = await prisma.shotSession.findMany({
     where: { userId },
@@ -129,7 +157,8 @@ export async function getClubTrendSeries(
   const ordered = sessionsWithDates
     .filter((session): session is NonNullable<typeof session> => session !== null)
     .sort((a, b) => b.date.getTime() - a.date.getTime())
-    .slice(0, safeRange);
+    .filter((session) => (rangeStart ? session.date >= rangeStart : true))
+    .slice(0, typeof range === 'number' ? safeRange : Number.POSITIVE_INFINITY);
 
   const series: ClubTrendPoint[] = [];
   for (const session of ordered) {
@@ -147,9 +176,33 @@ export async function getClubTrendSeries(
       carryStdDev: stats.carryStdDev,
       offlineStdDev: stats.offlineStdDev,
       smashMedian: stats.smashMedian,
-      faceToPathMean: stats.faceToPathMean
+      faceToPathMean: stats.faceToPathMean,
+      topMissShape: stats.topMissShape ?? null
     });
   }
 
   return series;
+}
+
+export async function getUserNormalizedClubs(userId: string): Promise<string[]> {
+  const sessions = await prisma.shotSession.findMany({
+    where: { userId },
+    select: {
+      id: true,
+      userId: true,
+      importedAt: true,
+      notes: true
+    }
+  });
+
+  const clubSet = new Set<string>();
+  const ensured = await Promise.all(sessions.map((session) => ensureDerivedStats(session)));
+  for (const entry of ensured) {
+    if (!entry) continue;
+    for (const club of Object.keys(entry.derivedStats.perClubStats)) {
+      clubSet.add(normalizeClubToken(club));
+    }
+  }
+
+  return Array.from(clubSet).sort((a, b) => a.localeCompare(b));
 }

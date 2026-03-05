@@ -11,7 +11,9 @@ export type StoredDerivedStats = {
     Pick<
       ClubDeterministicStats,
       'count' | 'carryMedian' | 'carryStdDev' | 'offlineStdDev' | 'smashMedian' | 'faceToPathMean' | 'confidence'
-    >
+    > & {
+      topMissShape?: string | null;
+    }
   >;
 };
 
@@ -63,7 +65,8 @@ export const storedSessionPayloadSchema = z.object({
           offlineStdDev: z.number().nullable(),
           smashMedian: z.number().nullable(),
           faceToPathMean: z.number().nullable(),
-          confidence: z.enum(['High', 'Medium', 'Low'])
+          confidence: z.enum(['High', 'Medium', 'Low']),
+          topMissShape: z.string().nullable().optional()
         })
       )
     })

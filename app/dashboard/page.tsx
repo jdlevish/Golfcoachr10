@@ -26,6 +26,7 @@ export default async function DashboardPage() {
         >
           <button type="submit">Sign out</button>
         </form>
+        <Link href="/trends">View trends</Link>
         <Link href="/">Back home</Link>
       </div>
 
