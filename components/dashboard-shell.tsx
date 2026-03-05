@@ -2,12 +2,14 @@
 
 import { useState } from 'react';
 import CsvUploader from '@/components/csv-uploader';
+import ClubAliasSettings from '@/components/club-alias-settings';
 import SessionHistory from '@/components/session-history';
 
 export default function DashboardShell() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [showUploader, setShowUploader] = useState(false);
   const [showHistory, setShowHistory] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
 
   return (
     <div className="stack">
@@ -19,6 +21,16 @@ export default function DashboardShell() {
           </button>
         </div>
         {showUploader && <CsvUploader onSessionSaved={() => setRefreshKey((value) => value + 1)} />}
+      </section>
+
+      <section className="auth-panel">
+        <div className="section-header">
+          <h2>Club Settings</h2>
+          <button type="button" onClick={() => setShowSettings((value) => !value)}>
+            {showSettings ? 'Hide' : 'Show'}
+          </button>
+        </div>
+        {showSettings && <ClubAliasSettings refreshKey={refreshKey} />}
       </section>
 
       <section className="auth-panel">

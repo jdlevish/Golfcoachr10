@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { buildCoachV2Plan } from '@/lib/coach-v2';
 import { buildCoachPlan, buildGappingLadder, summarizeSession } from '@/lib/r10';
 import { parseStoredSessionPayload, toShotRecords } from '@/lib/session-storage';
+import { backfillUserSessionsClubNormalization } from '@/lib/session-club-normalization';
 
 type TimeWindow = 'all' | '1w' | '1m' | '3m' | '9m' | '1y';
 
@@ -175,6 +176,7 @@ export async function GET(request: Request) {
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  await backfillUserSessionsClubNormalization(userId);
 
   const url = new URL(request.url);
   const rawWindow = url.searchParams.get('window');

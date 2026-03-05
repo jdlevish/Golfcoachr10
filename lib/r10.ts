@@ -1,3 +1,5 @@
+import { resolveClubNormalization } from '@/lib/club-normalization';
+
 /**
  * Garmin R10 CSV normalization and session summarization helpers.
  *
@@ -10,7 +12,9 @@
  */
 
 export type ShotRecord = {
-  /** Canonical grouping identity: Garmin-controlled Club Type. */
+  clubRaw: string;
+  clubNormalized: string;
+  /** Canonical grouping identity used for analytics. */
   clubType: string;
   /** Optional user-entered nickname (can be blank/inconsistent). */
   clubName: string | null;
@@ -376,33 +380,38 @@ const getDetectedColumns = (rows: Record<string, string>[]) => {
 };
 
 
-const wedgeOrder = ['lob wedge', 'sand wedge', 'gap wedge', 'approach wedge', 'pitching wedge', 'wedge'];
+const wedgeOrder = ['LW', 'SW', 'GW', 'AW', 'PW'];
 
 const getClubSortKey = (clubType: string) => {
   const normalized = clubType.trim().toLowerCase();
 
-  const wedgeIndex = wedgeOrder.indexOf(normalized);
+  const wedgeIndex = wedgeOrder.map((wedge) => wedge.toLowerCase()).indexOf(normalized);
   if (wedgeIndex >= 0) return { group: 0, rank: wedgeIndex, label: normalized };
 
-  const ironMatch = normalized.match(/^(\d+)\s*iron$/);
+  const ironMatch = normalized.match(/^(\d+)\s*(iron|i)$/);
   if (ironMatch) {
     const ironNumber = Number(ironMatch[1]);
     // Lower rank should render first. 9-iron before 8-iron ... before 4-iron.
     return { group: 1, rank: 10 - ironNumber, label: normalized };
   }
 
-  const hybridMatch = normalized.match(/^(\d+)\s*hybrid$/);
+  const hybridMatch = normalized.match(/^(\d+)\s*(hybrid|h)$/);
   if (hybridMatch) {
     return { group: 2, rank: Number(hybridMatch[1]), label: normalized };
   }
 
-  const woodMatch = normalized.match(/^(\d+)\s*wood$/);
+  const woodMatch = normalized.match(/^(\d+)\s*(wood|w)$/);
   if (woodMatch) {
     return { group: 3, rank: Number(woodMatch[1]), label: normalized };
   }
 
-  if (normalized === 'driver') {
+  if (normalized === 'driver' || normalized === 'd') {
     return { group: 4, rank: 0, label: normalized };
+  }
+
+  const loft = normalized.match(/^(\d{2})\u00b0$/);
+  if (loft) {
+    return { group: 0, rank: 100 + Number(loft[1]), label: normalized };
   }
 
   return { group: 5, rank: 999, label: normalized };
@@ -471,12 +480,12 @@ export const inferSessionDateFromRows = (rows: Record<string, string>[]): Sessio
 };
 
 const getClubFamily = (clubType: string): GappingRow['family'] => {
-  const normalized = clubType.trim().toLowerCase();
-  if (wedgeOrder.includes(normalized) || normalized.includes('wedge')) return 'wedge';
-  if (/^\d+\s*iron$/.test(normalized)) return 'iron';
-  if (/^\d+\s*hybrid$/.test(normalized)) return 'hybrid';
-  if (/^\d+\s*wood$/.test(normalized) || normalized.includes('wood')) return 'wood';
-  if (normalized === 'driver') return 'driver';
+  const normalized = clubType.trim().toUpperCase();
+  if (wedgeOrder.includes(normalized) || /^\d{2}\u00B0$/.test(normalized)) return 'wedge';
+  if (/^\d+I$/.test(normalized) || /^\d+\s*IRON$/.test(normalized)) return 'iron';
+  if (/^\d+H$/.test(normalized) || /^\d+\s*HYBRID$/.test(normalized)) return 'hybrid';
+  if (/^\d+W$/.test(normalized) || /^\d+\s*WOOD$/.test(normalized)) return 'wood';
+  if (normalized === 'D' || normalized === 'DRIVER') return 'driver';
   return 'other';
 };
 
@@ -728,11 +737,15 @@ const markCarryOutliers = (shots: ShotRecord[]) => {
 
 export const mapRowsToShots = (rows: Record<string, string>[]): ShotRecord[] => {
   const { shots: normalizedShots } = parseRowsToNormalizedShots(rows);
+  const noAliases = new Map<string, string>();
   const shots: ShotRecord[] = normalizedShots.map((shot) => {
-    const clubType = shot.club || 'Unknown';
+    const normalized = resolveClubNormalization(shot.club || 'Unknown', noAliases);
+    const clubType = normalized.clubNormalized;
     const clubName = shot.clubName ?? null;
     const clubModel = shot.clubModel ?? null;
     return {
+      clubRaw: normalized.clubRaw,
+      clubNormalized: normalized.clubNormalized,
       clubType,
       clubName,
       clubModel,
@@ -1097,7 +1110,7 @@ export const computeMissPatterns = (shots: NormalizedShot[]): MissPatternResult 
 
 export const toNormalizedShotsFromShotRecords = (shots: ShotRecord[]): NormalizedShot[] =>
   shots.map((shot) => ({
-    club: shot.clubType,
+    club: shot.clubNormalized || shot.clubType,
     clubName: shot.clubName,
     clubModel: shot.clubModel,
     timestamp: null,
@@ -1142,7 +1155,7 @@ export const summarizeSession = (shots: ShotRecord[]): SessionSummary => {
     avgSpinRpm: avg(shots.map((s) => s.spinRpm)),
     clubs: Array.from(grouped.entries())
       .map(([name, list]) => {
-        const clubType = list[0]?.clubType ?? 'Unknown';
+        const clubType = list[0]?.clubNormalized ?? list[0]?.clubType ?? 'Unknown';
         const primaryModel = list[0]?.clubModel ?? null;
         const clubStats = deterministicStats.perClubStats[clubType];
         return {

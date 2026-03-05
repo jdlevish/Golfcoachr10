@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import type { ClubDeterministicStats, ShotRecord } from '@/lib/r10';
 
-export type StoredShot = Omit<ShotRecord, 'raw'>;
+export type StoredShot = Omit<ShotRecord, 'raw' | 'clubRaw' | 'clubNormalized'> & {
+  clubRaw?: string;
+  clubNormalized?: string;
+};
 
 export type StoredDerivedStats = {
   version: 1;
@@ -25,6 +28,8 @@ export type StoredSessionPayload = {
 };
 
 export const storedShotSchema = z.object({
+  clubRaw: z.string().optional(),
+  clubNormalized: z.string().optional(),
   clubType: z.string(),
   clubName: z.string().nullable(),
   clubModel: z.string().nullable(),
@@ -78,10 +83,18 @@ export const toStoredShots = (shots: ShotRecord[]): StoredShot[] =>
   shots.map(({ raw: _raw, ...rest }) => rest);
 
 export const toShotRecords = (shots: StoredShot[]): ShotRecord[] =>
-  shots.map((shot) => ({
-    ...shot,
-    raw: {}
-  }));
+  shots.map((shot) => {
+    const clubRaw = shot.clubRaw?.trim() || shot.clubType || 'Unknown';
+    const clubNormalized = shot.clubNormalized?.trim() || shot.clubType || 'Unknown';
+    return {
+      ...shot,
+      clubRaw,
+      clubNormalized,
+      clubType: clubNormalized,
+      displayClub: shot.clubName ? `${clubNormalized} (${shot.clubName})` : clubNormalized,
+      raw: {}
+    };
+  });
 
 export const parseStoredSessionPayload = (notes: string | null): StoredSessionPayload | null => {
   if (!notes) return null;

@@ -6,6 +6,7 @@ import { generateCoachSummary } from '@/lib/coach-summary';
 import { prisma } from '@/lib/prisma';
 import { buildGappingLadder, summarizeSession } from '@/lib/r10';
 import { parseStoredSessionPayload, toShotRecords } from '@/lib/session-storage';
+import { backfillUserSessionsClubNormalization } from '@/lib/session-club-normalization';
 
 type RouteContext = {
   params: {
@@ -74,6 +75,7 @@ export async function POST(_request: Request, context: RouteContext) {
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  await backfillUserSessionsClubNormalization(userId);
 
   const sessionId = context.params.sessionId;
   const targetSession = await prisma.shotSession.findFirst({

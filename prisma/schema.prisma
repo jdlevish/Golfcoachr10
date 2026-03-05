@@ -18,6 +18,7 @@ model User {
   coachProfile CoachProfile?
   drillLogs    DrillLog[]
   analyses     SessionAnalysis[]
+  clubAliases  ClubAlias[]
 }
 
 model ShotSession {
@@ -91,4 +92,16 @@ model DrillLog {
 
   @@index([userId, completedAt])
   @@index([shotSessionId])
+}
+
+model ClubAlias {
+  id         String   @id @default(cuid())
+  userId     String
+  raw        String
+  normalized String
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, raw])
+  @@index([userId])
 }

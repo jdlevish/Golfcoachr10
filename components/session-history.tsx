@@ -12,6 +12,7 @@ import {
 } from '@/lib/r10';
 import { computeCoachDiagnosis, type CoachDiagnosis, type ConstraintType } from '@/lib/coach-diagnosis';
 import { generateDeterministicPlan } from '@/lib/drill-library';
+import { resolveClubNormalization } from '@/lib/club-normalization';
 import type { RuleInsight, TrendDeltas } from '@/types/analysis';
 import type { CoachV2Plan } from '@/types/coach';
 
@@ -178,16 +179,7 @@ const formatBreakdownTerms = (terms: Record<string, number | null>) =>
     .map(([key, value]) => `${key}=${typeof value === 'number' ? value.toFixed(2) : 'n/a'}`)
     .join(', ') || 'n/a';
 const normalizeClubToken = (club: string) => {
-  const cleaned = club.trim().toLowerCase().replace(/\s+/g, ' ');
-  const shortIronMatch = cleaned.match(/^(\d+)i$/);
-  if (shortIronMatch) return `${shortIronMatch[1]} iron`;
-  const spacedShortIronMatch = cleaned.match(/^(\d+)\s+i$/);
-  if (spacedShortIronMatch) return `${spacedShortIronMatch[1]} iron`;
-  if (cleaned === 'pw') return 'pitching wedge';
-  if (cleaned === 'sw') return 'sand wedge';
-  if (cleaned === 'gw') return 'gap wedge';
-  if (cleaned === 'lw') return 'lob wedge';
-  return cleaned;
+  return resolveClubNormalization(club, new Map()).clubNormalized;
 };
 
 const resolveKeyMetricLabel = (constraintLabel: string) => {
