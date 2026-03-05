@@ -68,6 +68,46 @@ type AllTimePayload = {
   coachV2Plan: CoachV2Plan | null;
   trendDeltas: TrendDeltas | null;
   ruleInsights: RuleInsight[];
+  periodComparison: {
+    range: TimeWindow;
+    currentPeriod: {
+      from: string;
+      to: string;
+      sessions: number;
+      avgShotCount: number | null;
+    };
+    previousPeriod: {
+      from: string;
+      to: string;
+      sessions: number;
+      avgShotCount: number | null;
+    };
+    sessionFrequencyChange: {
+      previous: number;
+      current: number;
+      delta: number;
+      deltaPct: number | null;
+    };
+    avgShotCountChange: {
+      previous: number | null;
+      current: number | null;
+      delta: number | null;
+      deltaPct: number | null;
+    };
+    clubs: Array<{
+      club: string;
+      carryMedianChange: {
+        previous: number | null;
+        current: number | null;
+        delta: number | null;
+      };
+      offlineStdDevChange: {
+        previous: number | null;
+        current: number | null;
+        delta: number | null;
+      };
+    }>;
+  } | null;
 };
 
 type CoachProfile = {
@@ -121,6 +161,16 @@ const formatTrendDelta = (delta: number | null, unit: string) => {
   if (delta === null) return '-';
   const sign = delta > 0 ? '+' : '';
   return `${sign}${delta.toFixed(1)} ${unit}`;
+};
+const formatSigned = (value: number | null, suffix = '') => {
+  if (value === null) return '-';
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(1)}${suffix}`;
+};
+const formatSignedPct = (value: number | null) => {
+  if (value === null) return '-';
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(1)}%`;
 };
 const formatValue = (value: number | null, suffix = '') => (value === null ? '-' : `${value.toFixed(1)}${suffix}`);
 const formatBreakdownTerms = (terms: Record<string, number | null>) =>
@@ -453,6 +503,19 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
       summary: byNormalizedEntry[1].keyDeltaSummary
     };
   }, [selectedSession?.comparison, sessionPrimaryClub]);
+  const periodComparisonTopClubs = useMemo(() => {
+    const clubs = allTime?.periodComparison?.clubs ?? [];
+    return clubs
+      .slice()
+      .sort((a, b) => {
+        const aMagnitude =
+          Math.abs(a.carryMedianChange.delta ?? 0) + Math.abs(a.offlineStdDevChange.delta ?? 0);
+        const bMagnitude =
+          Math.abs(b.carryMedianChange.delta ?? 0) + Math.abs(b.offlineStdDevChange.delta ?? 0);
+        return bMagnitude - aMagnitude;
+      })
+      .slice(0, 5);
+  }, [allTime?.periodComparison?.clubs]);
   const allTimeDiagnosis = useMemo<CoachDiagnosis | null>(() => {
     if (!allTime?.coachV2Plan) return null;
     const primary = allTime.coachV2Plan.primaryConstraint;
@@ -803,6 +866,72 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               <p>{allTimePrimaryTarget}</p>
             </article>
           </section>
+          <article className="coach-card" aria-label="Period comparison">
+            <h3>Period Comparison</h3>
+            {!allTime.periodComparison ? (
+              <p className="helper-text">
+                Select a fixed date window (1 Week, 1 Month, 3 Months, 9 Months, or 1 Year) to compare
+                current period vs previous period.
+              </p>
+            ) : (
+              <>
+                <p className="helper-text">
+                  Current ({new Date(allTime.periodComparison.currentPeriod.from).toLocaleDateString()} -{' '}
+                  {new Date(allTime.periodComparison.currentPeriod.to).toLocaleDateString()}) vs Previous (
+                  {new Date(allTime.periodComparison.previousPeriod.from).toLocaleDateString()} -{' '}
+                  {new Date(allTime.periodComparison.previousPeriod.to).toLocaleDateString()})
+                </p>
+                <section className="summary-grid" aria-label="Period comparison summary">
+                  <article>
+                    <h3>Session Frequency</h3>
+                    <p>
+                      {allTime.periodComparison.sessionFrequencyChange.current} (
+                      {formatSigned(allTime.periodComparison.sessionFrequencyChange.delta)})
+                    </p>
+                    <p className="helper-text">
+                      vs {allTime.periodComparison.sessionFrequencyChange.previous} prior (
+                      {formatSignedPct(allTime.periodComparison.sessionFrequencyChange.deltaPct)})
+                    </p>
+                  </article>
+                  <article>
+                    <h3>Avg Shot Count</h3>
+                    <p>{formatNumber(allTime.periodComparison.avgShotCountChange.current, '')}</p>
+                    <p className="helper-text">
+                      Delta {formatSigned(allTime.periodComparison.avgShotCountChange.delta)} (
+                      {formatSignedPct(allTime.periodComparison.avgShotCountChange.deltaPct)})
+                    </p>
+                  </article>
+                </section>
+                {periodComparisonTopClubs.length > 0 ? (
+                  <>
+                    <h3>Per-Club Change</h3>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Club</th>
+                          <th>Carry Median</th>
+                          <th>Offline Std Dev</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {periodComparisonTopClubs.map((club) => (
+                          <tr key={club.club}>
+                            <td data-label="Club">{club.club}</td>
+                            <td data-label="Carry Median">{formatSigned(club.carryMedianChange.delta, ' yds')}</td>
+                            <td data-label="Offline Std Dev">{formatSigned(club.offlineStdDevChange.delta, ' yds')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                ) : (
+                  <p className="helper-text">
+                    Not enough club overlap between periods yet for per-club comparison.
+                  </p>
+                )}
+              </>
+            )}
+          </article>
           {allTimeView === 'coach' && (
             <>
           {coachProfile && (

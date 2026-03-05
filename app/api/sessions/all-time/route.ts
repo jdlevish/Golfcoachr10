@@ -8,6 +8,14 @@ import { parseStoredSessionPayload, toShotRecords } from '@/lib/session-storage'
 
 type TimeWindow = 'all' | '1w' | '1m' | '3m' | '9m' | '1y';
 
+type ParsedSession = {
+  id: string;
+  importedAt: Date;
+  shots: ReturnType<typeof toShotRecords>;
+  summary: ReturnType<typeof summarizeSession>;
+  gappingLadder: ReturnType<typeof buildGappingLadder>;
+};
+
 const resolveWindowStart = (window: TimeWindow): Date | null => {
   if (window === 'all') return null;
 
@@ -33,6 +41,132 @@ const resolveWindowStart = (window: TimeWindow): Date | null => {
 
   start.setFullYear(now.getFullYear() - 1);
   return start;
+};
+
+const windowDays = (window: TimeWindow): number | null => {
+  if (window === '1w') return 7;
+  if (window === '1m') return 30;
+  if (window === '3m') return 90;
+  if (window === '9m') return 270;
+  if (window === '1y') return 365;
+  return null;
+};
+
+const avg = (values: number[]) => {
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+};
+
+const buildPeriodComparison = (sessions: ParsedSession[], window: TimeWindow) => {
+  const days = windowDays(window);
+  if (!days) return null;
+
+  const now = new Date();
+  const currentStart = new Date(now);
+  currentStart.setDate(now.getDate() - days);
+  const previousStart = new Date(currentStart);
+  previousStart.setDate(currentStart.getDate() - days);
+
+  const currentPeriodSessions = sessions.filter((session) => session.importedAt >= currentStart);
+  const previousPeriodSessions = sessions.filter(
+    (session) => session.importedAt >= previousStart && session.importedAt < currentStart
+  );
+
+  const currentAvgShots = avg(currentPeriodSessions.map((session) => session.summary.shots));
+  const previousAvgShots = avg(previousPeriodSessions.map((session) => session.summary.shots));
+
+  const aggregateClubMetric = (
+    periodSessions: ParsedSession[],
+    metric: 'medianCarryYds' | 'offlineStdDevYds'
+  ) => {
+    const bucket = new Map<string, number[]>();
+    for (const session of periodSessions) {
+      for (const club of session.summary.clubs) {
+        const value = club[metric];
+        if (typeof value !== 'number') continue;
+        const list = bucket.get(club.clubType) ?? [];
+        list.push(value);
+        bucket.set(club.clubType, list);
+      }
+    }
+    return new Map(
+      Array.from(bucket.entries()).map(([club, values]) => [club, avg(values)])
+    );
+  };
+
+  const currentCarry = aggregateClubMetric(currentPeriodSessions, 'medianCarryYds');
+  const previousCarry = aggregateClubMetric(previousPeriodSessions, 'medianCarryYds');
+  const currentOffline = aggregateClubMetric(currentPeriodSessions, 'offlineStdDevYds');
+  const previousOffline = aggregateClubMetric(previousPeriodSessions, 'offlineStdDevYds');
+
+  const sharedClubs = Array.from(currentCarry.keys()).filter(
+    (club) => previousCarry.has(club) && currentOffline.has(club) && previousOffline.has(club)
+  );
+
+  const clubs = sharedClubs.map((club) => {
+    const currentCarryValue = currentCarry.get(club) ?? null;
+    const previousCarryValue = previousCarry.get(club) ?? null;
+    const currentOfflineValue = currentOffline.get(club) ?? null;
+    const previousOfflineValue = previousOffline.get(club) ?? null;
+    return {
+      club,
+      carryMedianChange: {
+        previous: previousCarryValue,
+        current: currentCarryValue,
+        delta:
+          previousCarryValue === null || currentCarryValue === null
+            ? null
+            : currentCarryValue - previousCarryValue
+      },
+      offlineStdDevChange: {
+        previous: previousOfflineValue,
+        current: currentOfflineValue,
+        delta:
+          previousOfflineValue === null || currentOfflineValue === null
+            ? null
+            : currentOfflineValue - previousOfflineValue
+      }
+    };
+  });
+
+  const sessionFrequencyDelta = currentPeriodSessions.length - previousPeriodSessions.length;
+  const sessionFrequencyDeltaPct =
+    previousPeriodSessions.length > 0
+      ? (sessionFrequencyDelta / previousPeriodSessions.length) * 100
+      : null;
+  const avgShotCountDelta =
+    previousAvgShots !== null && currentAvgShots !== null ? currentAvgShots - previousAvgShots : null;
+  const avgShotCountDeltaPct =
+    previousAvgShots && avgShotCountDelta !== null ? (avgShotCountDelta / previousAvgShots) * 100 : null;
+
+  return {
+    range: window,
+    currentPeriod: {
+      from: currentStart.toISOString(),
+      to: now.toISOString(),
+      sessions: currentPeriodSessions.length,
+      avgShotCount: currentAvgShots
+    },
+    previousPeriod: {
+      from: previousStart.toISOString(),
+      to: currentStart.toISOString(),
+      sessions: previousPeriodSessions.length,
+      avgShotCount: previousAvgShots
+    },
+    sessionFrequencyChange: {
+      previous: previousPeriodSessions.length,
+      current: currentPeriodSessions.length,
+      delta: sessionFrequencyDelta,
+      deltaPct: sessionFrequencyDeltaPct
+    },
+    avgShotCountChange: {
+      previous: previousAvgShots,
+      current: currentAvgShots,
+      delta: avgShotCountDelta,
+      deltaPct: avgShotCountDeltaPct
+    },
+    clubs
+  };
 };
 
 export async function GET(request: Request) {
@@ -61,7 +195,7 @@ export async function GET(request: Request) {
     }
   });
 
-  const parsedSessions = sessions
+  const parsedSessionsAll = sessions
     .map((entry) => {
       const payload = parseStoredSessionPayload(entry.notes);
       if (!payload) return null;
@@ -82,8 +216,8 @@ export async function GET(request: Request) {
       };
     })
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-    .filter((entry) => (windowStart ? entry.importedAt >= windowStart : true))
     .sort((a, b) => b.importedAt.getTime() - a.importedAt.getTime());
+  const parsedSessions = parsedSessionsAll.filter((entry) => (windowStart ? entry.importedAt >= windowStart : true));
   const drillLogs = await prisma.drillLog.findMany({
     where: { userId },
     orderBy: { completedAt: 'desc' },
@@ -122,15 +256,17 @@ export async function GET(request: Request) {
   const ruleInsights = latestSession
     ? buildRuleInsights(latestSession.shots, latestSession.summary, latestSession.gappingLadder, drillLogs)
     : [];
+  const periodComparison = buildPeriodComparison(parsedSessionsAll, timeWindow);
 
   return NextResponse.json({
     timeWindow,
-    sessionsCount: sessions.length,
+    sessionsCount: parsedSessions.length,
     summary,
     gappingLadder,
     coachPlan,
     coachV2Plan,
     trendDeltas,
-    ruleInsights
+    ruleInsights,
+    periodComparison
   });
 }
