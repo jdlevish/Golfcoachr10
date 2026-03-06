@@ -102,28 +102,38 @@ export async function getCourseModeRecommendation(
   }
 
   const adjustedTargetCarry = adjustTargetForWind(input.targetCarry, input.windDirection, input.windMph);
-  const ranked = Array.from(byClub.entries())
-    .map(([club, points]) => {
-      const sorted = [...points].sort((a, b) => b.date.getTime() - a.date.getTime());
-      const selected = sorted.length >= 5 ? sorted.slice(0, 5) : sorted.slice(0, 1);
-      const carryMedian = mean(selected.map((point) => point.carryMedian));
-      if (carryMedian === null) return null;
-      const carryStdDev = mean(selected.map((point) => point.carryStdDev));
-      const offlineStdDev = mean(selected.map((point) => point.offlineStdDev));
-      const confidence = applyLiePenalty(baseConfidence(carryStdDev, offlineStdDev), input.lie);
-      return {
-        club,
-        carryMedian,
-        carryStdDev,
-        offlineStdDev,
-        confidence,
-        sessionsUsed: selected.length,
-        trendHref: `/trends?club=${encodeURIComponent(club)}`
-      };
-    })
-    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  const buildRanked = (useFallbackWindow: boolean) =>
+    Array.from(byClub.entries())
+      .map(([club, points]) => {
+        const sorted = [...points].sort((a, b) => b.date.getTime() - a.date.getTime());
+        const selected = useFallbackWindow
+          ? sorted.slice(0, Math.min(5, sorted.length))
+          : sorted.length >= 5
+            ? sorted.slice(0, 5)
+            : sorted.slice(0, 1);
+        const carryMedian = mean(selected.map((point) => point.carryMedian));
+        if (carryMedian === null) return null;
+        const carryStdDev = mean(selected.map((point) => point.carryStdDev));
+        const offlineStdDev = mean(selected.map((point) => point.offlineStdDev));
+        const confidence = applyLiePenalty(baseConfidence(carryStdDev, offlineStdDev), input.lie);
+        return {
+          club,
+          carryMedian,
+          carryStdDev,
+          offlineStdDev,
+          confidence,
+          sessionsUsed: selected.length,
+          trendHref: `/trends?club=${encodeURIComponent(club)}`
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
-  const eligible = ranked.filter((entry) => entry.confidence !== 'Low');
+  let ranked = buildRanked(false);
+  let eligible = ranked.filter((entry) => entry.confidence !== 'Low');
+  if (!eligible.length) {
+    ranked = buildRanked(true);
+    eligible = ranked.filter((entry) => entry.confidence !== 'Low');
+  }
   if (!eligible.length) return null;
 
   const best = [...eligible].sort(
