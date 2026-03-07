@@ -44,8 +44,18 @@ const mean = (values: Array<number | null>) => {
   return numeric.reduce((sum, value) => sum + value, 0) / numeric.length;
 };
 
-const baseConfidence = (carryStdDev: number | null, offlineStdDev: number | null) => {
-  if (carryStdDev === null || offlineStdDev === null) return 'Low' as const;
+const baseConfidence = (carryStdDev: number | null, offlineStdDev: number | null, sessionsUsed: number) => {
+  if (carryStdDev === null && offlineStdDev === null) {
+    return sessionsUsed >= 4 ? ('Medium' as const) : ('Low' as const);
+  }
+  if (carryStdDev === null) {
+    if (offlineStdDev !== null && offlineStdDev < 18 && sessionsUsed >= 3) return 'Medium' as const;
+    return 'Low' as const;
+  }
+  if (offlineStdDev === null) {
+    if (carryStdDev < 9 && sessionsUsed >= 3) return 'Medium' as const;
+    return 'Low' as const;
+  }
   if (carryStdDev < 6 && offlineStdDev < 12) return 'High' as const;
   if (carryStdDev < 9 && offlineStdDev < 18) return 'Medium' as const;
   return 'Low' as const;
@@ -115,7 +125,7 @@ export async function getCourseModeRecommendation(
         if (carryMedian === null) return null;
         const carryStdDev = mean(selected.map((point) => point.carryStdDev));
         const offlineStdDev = mean(selected.map((point) => point.offlineStdDev));
-        const confidence = applyLiePenalty(baseConfidence(carryStdDev, offlineStdDev), input.lie);
+        const confidence = applyLiePenalty(baseConfidence(carryStdDev, offlineStdDev, selected.length), input.lie);
         return {
           club,
           carryMedian,
