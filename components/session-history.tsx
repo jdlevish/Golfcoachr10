@@ -158,6 +158,8 @@ const formatGapStatus = (status: GappingLadder['rows'][number]['gapStatus']) => 
   return 'Cliff';
 };
 const formatDateTime = (value: string) => new Date(value).toLocaleString();
+const formatSessionDate = (value: string) =>
+  new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 const formatTrendDelta = (delta: number | null, unit: string) => {
   if (delta === null) return '-';
   const sign = delta > 0 ? '+' : '';
@@ -180,6 +182,33 @@ const formatBreakdownTerms = (terms: Record<string, number | null>) =>
     .join(', ') || 'n/a';
 const normalizeClubToken = (club: string) => {
   return resolveClubNormalization(club, new Map()).clubNormalized;
+};
+
+const toCoachIssueLabel = (issue: string) => {
+  if (issue === 'DirectionConsistency') return 'Direction Control';
+  if (issue === 'FaceControl') return 'Face Control';
+  if (issue === 'DistanceControl') return 'Distance Control';
+  if (issue === 'StrikeQuality') return 'Strike Quality';
+  if (issue.toLowerCase().includes('direction')) return 'Direction Control';
+  if (issue.toLowerCase().includes('distance')) return 'Distance Control';
+  if (issue.toLowerCase().includes('strike')) return 'Strike Quality';
+  if (issue.toLowerCase().includes('gapping')) return 'Gapping';
+  return issue;
+};
+
+const formatIssueHeadline = (club: string, issue: string) => {
+  const safeClub = club && club !== 'Session' ? club : 'Session';
+  return `${safeClub} ${toCoachIssueLabel(issue)}`;
+};
+
+const formatCoachMetricValue = (value: number | null, unitHint: string) => {
+  if (value === null) return 'n/a';
+  const normalized = unitHint.toLowerCase();
+  if (normalized.includes('yd')) return `+/-${value.toFixed(0)}y`;
+  if (normalized.includes('deg')) return `${value.toFixed(1)} deg`;
+  if (normalized.includes('smash')) return value.toFixed(2);
+  if (normalized.includes('alert')) return `${value.toFixed(0)}`;
+  return value.toFixed(1);
 };
 
 const resolveKeyMetricLabel = (constraintLabel: string) => {
@@ -450,6 +479,10 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3) as Array<[Shape, number]>;
   }, [selectedSessionMissPatterns]);
+  const sessionSummaryPatternPoints = useMemo(
+    () => (selectedSession ? buildScatterPoints(selectedSession.shots, 'sideYds', 'carryYds', 320, 190) : []),
+    [selectedSession]
+  );
   const selectedPrimaryMetricLabel = useMemo(() => {
     if (!selectedSessionDiagnosis) return null;
     const primary = selectedSessionDiagnosis.primary;
@@ -481,6 +514,35 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
     selectedPrimaryMetricValue ?? selectedSession?.coachV2Plan?.primaryConstraint.currentValue ?? null;
   const sessionPrimaryTarget =
     selectedSession?.coachV2Plan?.practicePlan.goal ?? 'Reduce this metric by 15-20% over the next 3 sessions.';
+  const sessionIssueHeadline = formatIssueHeadline(sessionPrimaryClub, sessionPrimaryIssue);
+  const sessionTopMissPct = selectedSessionMissPatterns
+    ? selectedSessionMissPatterns.overall.distribution[selectedSessionMissPatterns.overall.topShape] ?? null
+    : null;
+  const sessionCurrentMetricLine = selectedSession?.coachV2Plan?.primaryConstraint
+    ? `Current ${
+        selectedSession.coachV2Plan.primaryConstraint.key === 'direction_consistency'
+          ? 'Dispersion'
+          : selectedSession.coachV2Plan.primaryConstraint.key === 'distance_control'
+            ? 'Carry Window'
+            : selectedSession.coachV2Plan.primaryConstraint.key === 'strike_quality'
+              ? 'Strike'
+              : 'Gap Alerts'
+      }: ${formatCoachMetricValue(
+        selectedSession.coachV2Plan.primaryConstraint.currentValue,
+        selectedSession.coachV2Plan.primaryConstraint.targetMetric
+      )}`
+    : `Current ${sessionPrimaryMetricLabel}: ${formatCoachMetricValue(sessionPrimaryMetricValue, sessionPrimaryMetricLabel)}`;
+  const sessionGoalMetricLine = selectedSession?.coachV2Plan?.primaryConstraint
+    ? `Goal: ${formatCoachMetricValue(
+        selectedSession.coachV2Plan.primaryConstraint.targetValue,
+        selectedSession.coachV2Plan.primaryConstraint.targetMetric
+      )}`
+    : `Goal: ${sessionPrimaryTarget}`;
+  const sessionTakeawayText = coachSummary?.text
+    ? coachSummary.text
+    : selectedSession?.coachV2Plan?.trendSummary ??
+      selectedSession?.coachV2Plan?.primaryConstraint.reasons[0] ??
+      'Start with the main pattern, simplify the task, and only add variability once the start line stabilizes.';
   const primaryClubComparison = useMemo(() => {
     if (!selectedSession?.comparison || !sessionPrimaryClub) return null;
     const normalizedPrimary = normalizeClubToken(sessionPrimaryClub);
@@ -495,6 +557,9 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
       summary: byNormalizedEntry[1].keyDeltaSummary
     };
   }, [selectedSession?.comparison, sessionPrimaryClub]);
+  const sessionTakeawayFollowUp = coachSummary?.whatToDoNext
+    ? coachSummary.whatToDoNext
+    : primaryClubComparison?.summary ?? null;
   const periodComparisonTopClubs = useMemo(() => {
     const clubs = allTime?.periodComparison?.clubs ?? [];
     return clubs
@@ -1289,62 +1354,47 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
           onToggle={() => setShowSessionDetail((value) => !value)}
           className="session-detail-sticky"
         >
-          <p>
-            {formatDateTime(selectedSession.sessionDate)} |{' '}
-            {selectedSession.sourceFile ?? 'Unknown source'}
-          </p>
-          <p>
-            Shots: {selectedSession.summary.shots} | Avg carry:{' '}
-            {formatNumber(selectedSession.summary.avgCarryYds, ' yds')}
-          </p>
-          <p>
-            Clubs tracked: {selectedSession.summary.clubs.length} | Gap alerts:{' '}
-            {selectedSession.gappingLadder.rows.filter((row) => row.gapStatus === 'overlap' || row.gapStatus === 'cliff').length}
-          </p>
-          <div className="flow-tabs sticky-flow-tabs" role="tablist" aria-label="Session insight tabs">
-            <button
-              type="button"
-              className={sessionView === 'coach' ? 'flow-tab active' : 'flow-tab'}
-              onClick={() => setSessionView('coach')}
-            >
-              Coach
-            </button>
-            <button
-              type="button"
-              className={sessionView === 'gapping' ? 'flow-tab active' : 'flow-tab'}
-              onClick={() => setSessionView('gapping')}
-            >
-              Gapping Ladder
-            </button>
-            <button
-              type="button"
-              className={sessionView === 'deepdive' ? 'flow-tab active' : 'flow-tab'}
-              onClick={() => setSessionView('deepdive')}
-            >
-              Deep Dive
-            </button>
+          <div className="session-summary-shell">
+            <div className="top-bar session-summary-topbar">
+              <button
+                type="button"
+                className="icon-button session-summary-back"
+                onClick={() => setSelectedSession(null)}
+                aria-label="Back to saved sessions"
+              >
+                &lt;
+              </button>
+              <div className="session-summary-heading">
+                <h3 className="session-summary-title">Session Summary</h3>
+                <p className="session-summary-date">{formatSessionDate(selectedSession.sessionDate)}</p>
+              </div>
+            </div>
+
+            <div className="flow-tabs sticky-flow-tabs" role="tablist" aria-label="Session insight tabs">
+              <button
+                type="button"
+                className={sessionView === 'coach' ? 'flow-tab active' : 'flow-tab'}
+                onClick={() => setSessionView('coach')}
+              >
+                Summary
+              </button>
+              <button
+                type="button"
+                className={sessionView === 'gapping' ? 'flow-tab active' : 'flow-tab'}
+                onClick={() => setSessionView('gapping')}
+              >
+                Gapping Ladder
+              </button>
+              <button
+                type="button"
+                className={sessionView === 'deepdive' ? 'flow-tab active' : 'flow-tab'}
+                onClick={() => setSessionView('deepdive')}
+              >
+                Deep Dive
+              </button>
+            </div>
           </div>
-          <section className="summary-grid" aria-label="Session issue summary">
-            <article>
-              <h3>Primary Issue</h3>
-              <p>{sessionPrimaryIssue}</p>
-            </article>
-            <article>
-              <h3>Club</h3>
-              <p>{sessionPrimaryClub}</p>
-            </article>
-            <article>
-              <h3>Key Metric</h3>
-              <p>
-                {sessionPrimaryMetricLabel}:{' '}
-                {typeof sessionPrimaryMetricValue === 'number' ? sessionPrimaryMetricValue.toFixed(2) : 'n/a'}
-              </p>
-            </article>
-            <article>
-              <h3>Target</h3>
-              <p>{sessionPrimaryTarget}</p>
-            </article>
-          </section>
+
           {sessionView === 'deepdive' && (
             <section className="full-range-data">
               <div className="full-range-controls">
@@ -1638,211 +1688,156 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
               )}
             </>
           )}
-          {sessionView === 'coach' && selectedSession.coachV2Plan && (
+          {sessionView === 'coach' && (
             <>
-              <article className="coach-card">
-                <h3>Compared To Last Session</h3>
-                {selectedSession.comparison.comparedToSessionId ? (
-                  <>
-                    <ul className="insights-list">
-                      {selectedSession.comparison.headlines.slice(0, 3).map((headline) => (
-                        <li key={headline}>{headline}</li>
-                      ))}
-                    </ul>
-                    <p>
-                      <strong>Likely cause ({selectedSession.comparison.likelyCause.type}):</strong>{' '}
-                      {selectedSession.comparison.likelyCause.explanation}
-                    </p>
-                    {primaryClubComparison && (
-                      <p>
-                        <strong>{primaryClubComparison.club} focus:</strong> {primaryClubComparison.summary}
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  <p className="helper-text">No prior session available to compare yet.</p>
-                )}
-              </article>
-              {selectedSessionDiagnosis && (
-                <>
-                  <h3>Coach: Primary Issue</h3>
-                  <p>
-                    <strong>{selectedSessionDiagnosis.primary.constraintType}</strong> on{' '}
-                    <strong>{selectedSessionDiagnosis.primary.club}</strong> (confidence: {selectedSessionDiagnosis.primary.confidence})
+              <div className="session-summary-grid">
+                <article className="coach-card session-summary-card">
+                  <div className="card-header">
+                    <div>
+                      <h3 className="card-title">Primary Issue</h3>
+                    </div>
+                  </div>
+                  <p className="session-issue-headline">{sessionIssueHeadline}</p>
+                  <p className="session-issue-line">
+                    Most Common Miss: <strong>{selectedSessionMissPatterns?.overall.topShape ?? 'Unavailable'}</strong>
+                    {sessionTopMissPct !== null ? ` (${sessionTopMissPct.toFixed(1)}%)` : ''}
                   </p>
-                  <p>
-                    <strong>Key metric:</strong> {selectedPrimaryMetricLabel ?? 'n/a'}{' '}
-                    {typeof selectedPrimaryMetricValue === 'number' ? `= ${selectedPrimaryMetricValue.toFixed(2)}` : '= n/a'}
-                  </p>
-                  <p>
-                    <strong>Target suggestion:</strong> Reduce {selectedPrimaryMetricLabel ?? 'this metric'} by 15-20% over the next 3
-                    sessions.
-                  </p>
-                  <p>
-                    <strong>Reason:</strong> {selectedSessionDiagnosis.primary.scoreBreakdown.formula} |{' '}
-                    {formatBreakdownTerms(selectedSessionDiagnosis.primary.scoreBreakdown.terms)} | score=
-                    {selectedSessionDiagnosis.primary.severityScore.toFixed(2)}
-                  </p>
-                  {selectedSessionDiagnosis.secondary && (
-                    <>
-                      <p>
-                        <strong>Secondary issue:</strong> {selectedSessionDiagnosis.secondary.constraintType} on{' '}
-                        {selectedSessionDiagnosis.secondary.club}
-                      </p>
-                      <p>
-                        <strong>Secondary reason:</strong> {selectedSessionDiagnosis.secondary.scoreBreakdown.formula} |{' '}
-                        {formatBreakdownTerms(selectedSessionDiagnosis.secondary.scoreBreakdown.terms)} | score=
-                        {selectedSessionDiagnosis.secondary.severityScore.toFixed(2)}
-                      </p>
-                    </>
-                  )}
-                  {selectedSessionPlan20 && (
-                    <section className="coach-card" aria-label="Session plan">
-                      <h3>Today&apos;s Plan (20 min)</h3>
-                      <p>
-                        <strong>Target:</strong> {selectedSessionPlan20.targetText}
-                      </p>
-                      <p>
-                        <strong>Warmup ({selectedSessionPlan20.warmup.durationMin} min):</strong> {selectedSessionPlan20.warmup.name} -{' '}
-                        {selectedSessionPlan20.warmup.repsText}
-                      </p>
-                      <p>
-                        <strong>How:</strong> {selectedSessionPlan20.warmup.setupText}
-                      </p>
-                      <p>
-                        <strong>Why:</strong> {selectedSessionPlan20.warmup.explanation}
-                      </p>
-                      <ul>
-                        {selectedSessionPlan20.drills.map((drill) => (
-                          <li key={drill.id}>
-                            <strong>{drill.name}</strong> ({drill.durationMin} min)
-                            <br />
-                            <strong>How:</strong> {drill.setupText}
-                            <br />
-                            <strong>Reps:</strong> {drill.repsText}
-                            <br />
-                            <strong>Success:</strong> {drill.successMetricText}
-                            <br />
-                            <strong>Why:</strong> {drill.explanation}
-                          </li>
+                  <p className="session-issue-line">{sessionCurrentMetricLine}</p>
+                  <p className="session-issue-line">{sessionGoalMetricLine}</p>
+                </article>
+
+                <article className="coach-card session-summary-card">
+                  <div className="card-header">
+                    <div>
+                      <h3 className="card-title">Shot Pattern</h3>
+                    </div>
+                  </div>
+                  {sessionSummaryPatternPoints.length > 0 ? (
+                    <div className="session-pattern-viz">
+                      <svg viewBox="0 0 320 190" role="img" aria-label="Session shot pattern visualization">
+                        <rect x="1" y="1" width="318" height="188" rx="14" fill="rgba(117, 144, 74, 0.16)" stroke="rgba(65, 109, 77, 0.25)" />
+                        <line x1="160" y1="12" x2="160" y2="178" stroke="rgba(255,255,255,0.85)" strokeDasharray="7 6" />
+                        <line x1="20" y1="95" x2="300" y2="95" stroke="rgba(255,255,255,0.55)" strokeDasharray="7 6" />
+                        {sessionSummaryPatternPoints.map((point, index) => (
+                          <circle
+                            key={`${point.x}-${point.y}-${index}`}
+                            cx={point.x}
+                            cy={point.y}
+                            r={4}
+                            fill={point.isOutlier ? 'var(--danger)' : 'var(--accent)'}
+                            opacity={point.isOutlier ? 0.82 : 0.92}
+                          />
                         ))}
-                      </ul>
-                      <p>
-                        <strong>Test Set ({selectedSessionPlan20.testSet.durationMin} min):</strong> {selectedSessionPlan20.testSet.name}
-                      </p>
-                      <p>
-                        <strong>How:</strong> {selectedSessionPlan20.testSet.setupText}
-                      </p>
-                      <p>
-                        <strong>Success:</strong> {selectedSessionPlan20.testSet.successMetricText}
-                      </p>
-                      <p>
-                        <strong>Why:</strong> {selectedSessionPlan20.testSet.explanation}
-                      </p>
-                      {selectedSessionPlan40 && (
-                        <details className="term-key">
-                          <summary>Optional 40-minute plan</summary>
-                          <p>
-                            <strong>Target:</strong> {selectedSessionPlan40.targetText}
-                          </p>
-                          <ul>
-                            {selectedSessionPlan40.drills.map((drill) => (
-                              <li key={drill.id}>
-                                <strong>{drill.name}</strong> ({drill.durationMin} min)
-                                <br />
-                                <strong>How:</strong> {drill.setupText}
-                                <br />
-                                <strong>Reps:</strong> {drill.repsText}
-                                <br />
-                                <strong>Why:</strong> {drill.explanation}
-                              </li>
-                            ))}
-                          </ul>
-                        </details>
-                      )}
-                    </section>
+                      </svg>
+                    </div>
+                  ) : (
+                    <div className="session-pattern-empty">Shot pattern view will appear when carry and offline values are available.</div>
                   )}
-                </>
-              )}
-              {selectedSessionMissPatterns && (
-                <>
-                  <section className="summary-grid" aria-label="Miss pattern summary">
-                    <article>
-                      <h3>Most common miss</h3>
-                      <p>{selectedSessionMissPatterns.overall.topShape}</p>
-                    </article>
-                    <article>
-                      <h3>Severe offline shots</h3>
-                      <p>{selectedSessionMissPatterns.overall.severePct.toFixed(1)}%</p>
-                    </article>
-                    <article>
-                      <h3>Top severe shape</h3>
-                      <p>{selectedSessionMissPatterns.overall.topSevereShape ?? 'None'}</p>
-                    </article>
-                  </section>
-                  <h3>Top miss shapes</h3>
+                  <p className="session-pattern-caption">
+                    Center line shows target start line. Dots show how the session clustered relative to center.
+                  </p>
+                </article>
+
+                <article className="coach-card session-summary-card">
+                  <div className="card-header">
+                    <div>
+                      <h3 className="card-title">Gapping Ladder</h3>
+                    </div>
+                  </div>
+                  {selectedSession.gappingLadder.rows.length === 0 ? (
+                    <p className="helper-text">No carry ladder data in this session yet.</p>
+                  ) : (
+                    <div className="session-gapping-list">
+                      {selectedSession.gappingLadder.rows.slice(0, 6).map((row) => (
+                        <div key={row.club} className="session-gapping-row">
+                          <span>{row.displayClub}</span>
+                          <strong>{formatNumber(row.medianCarryYds, ' yds')}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </article>
+
+                <article className="coach-card session-summary-card">
+                  <div className="card-header">
+                    <div>
+                      <h3 className="card-title">Coach&apos;s Takeaway</h3>
+                    </div>
+                  </div>
+                  <p className="session-takeaway-text">{sessionTakeawayText}</p>
+                  {coachSummary?.whyThisHappens ? (
+                    <p className="session-issue-line">
+                      <strong>Why this showed up:</strong> {coachSummary.whyThisHappens}
+                    </p>
+                  ) : null}
+                  {sessionTakeawayFollowUp ? (
+                    <p className="session-issue-line">
+                      <strong>What to do next:</strong> {sessionTakeawayFollowUp}
+                    </p>
+                  ) : null}
+                  {coachSummary?.onCourseTip ? (
+                    <p className="session-issue-line">
+                      <strong>On-course tip:</strong> {coachSummary.onCourseTip}
+                    </p>
+                  ) : null}
+                  <div className="session-action-row">
+                    <button type="button" onClick={() => void generateSummary()}>
+                      {summaryStatus ?? 'Generate Coach Summary'}
+                    </button>
+                    <button type="button" onClick={() => void snapshotAnalysis()}>
+                      Save Analysis Snapshot
+                    </button>
+                  </div>
+                  {analysisStatus ? <p className="helper-text">{analysisStatus}</p> : null}
+                </article>
+              </div>
+
+              {selectedSession.comparison.comparedToSessionId ? (
+                <article className="coach-card session-summary-card">
+                  <h3>Compared To Last Session</h3>
+                  <ul className="insights-list">
+                    {selectedSession.comparison.headlines.slice(0, 3).map((headline) => (
+                      <li key={headline}>{headline}</li>
+                    ))}
+                  </ul>
+                  <p>
+                    <strong>Likely cause ({selectedSession.comparison.likelyCause.type}):</strong>{' '}
+                    {selectedSession.comparison.likelyCause.explanation}
+                  </p>
+                  {primaryClubComparison && (
+                    <p>
+                      <strong>{primaryClubComparison.club} focus:</strong> {primaryClubComparison.summary}
+                    </p>
+                  )}
+                </article>
+              ) : null}
+
+              {selectedSessionPlan20 && (
+                <section className="coach-card session-summary-card" aria-label="Session plan">
+                  <h3>Practice Plan</h3>
+                  <p>
+                    <strong>Target:</strong> {selectedSessionPlan20.targetText}
+                  </p>
                   <ul>
-                    {selectedSessionTopThreeShapes.map(([shape, pct]) => (
-                      <li key={shape}>
-                        {shape}: {pct.toFixed(1)}%
+                    {selectedSessionPlan20.drills.slice(0, 3).map((drill) => (
+                      <li key={drill.id}>
+                        <strong>{drill.name}</strong>: {drill.repsText}. {drill.successMetricText}
                       </li>
                     ))}
                   </ul>
-                  <h3>Per-club miss pattern</h3>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Club</th>
-                        <th>Most Common Miss</th>
-                        <th>Severe %</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(selectedSessionMissPatterns.perClub).map(([club, clubPattern]) => (
-                        <tr key={club}>
-                          <td data-label="Club">{club}</td>
-                          <td data-label="Most Common Miss">{clubPattern.topShape}</td>
-                          <td data-label="Severe %">{clubPattern.severePct.toFixed(1)}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </>
-              )}
-              <p>
-                <strong>Coach focus:</strong> {selectedSession.coachV2Plan.primaryConstraint.label}
-              </p>
-              <p>
-                <strong>Target:</strong> {selectedSession.coachV2Plan.practicePlan.goal}
-              </p>
-              <p>
-                <button type="button" onClick={() => void snapshotAnalysis()}>
-                  Save Analysis Snapshot
-                </button>
-                {analysisStatus ? ` ${analysisStatus}` : ''}
-              </p>
-              <p>
-                <button type="button" onClick={() => void generateSummary()}>
-                  Generate Coach Summary
-                </button>
-                {summaryStatus ? ` ${summaryStatus}` : ''}
-              </p>
-              {coachSummary && (
-                <>
-                  <p>
-                    <strong>Coach summary ({coachSummary.source}{coachSummary.model ? `:${coachSummary.model}` : ''}):</strong>{' '}
-                    {coachSummary.text}
-                  </p>
-                  <p>
-                    <strong>Why this happens:</strong> {coachSummary.whyThisHappens}
-                  </p>
-                  <p>
-                    <strong>What to do next:</strong> {coachSummary.whatToDoNext}
-                  </p>
-                  <p>
-                    <strong>On-course tip:</strong> {coachSummary.onCourseTip}
-                  </p>
-                </>
+                  {selectedSessionPlan40 && (
+                    <details className="term-key">
+                      <summary>Optional 40-minute plan</summary>
+                      <ul>
+                        {selectedSessionPlan40.drills.map((drill) => (
+                          <li key={drill.id}>
+                            <strong>{drill.name}</strong>: {drill.repsText}. {drill.explanation}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </section>
               )}
             </>
           )}
