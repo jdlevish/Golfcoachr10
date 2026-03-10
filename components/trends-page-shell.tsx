@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import type { CoachV2Plan } from '@/types/coach';
+import { AppBottomNav, AppCard, AppHeaderBar, AppPageShell, buildPrimaryNav } from '@/components/app-shell';
 
 type ClubTrendPoint = {
   sessionId: string;
@@ -52,20 +52,6 @@ type ProgressMetricCard = {
   trendPositive: boolean;
 };
 
-type NavItem = {
-  label: string;
-  href: string;
-  active?: boolean;
-};
-
-const navItems: NavItem[] = [
-  { label: 'Home', href: '/' },
-  { label: 'Practice', href: '/range-mode' },
-  { label: 'Sessions', href: '/dashboard' },
-  { label: 'Progress', href: '/trends', active: true },
-  { label: 'More', href: '/course-mode' }
-];
-
 const placeholderCards: ProgressMetricCard[] = [
   {
     title: 'Direction Control',
@@ -108,31 +94,9 @@ const formatValue = (value: number | null, suffix = '') => {
   return `${value.toFixed(suffix ? 1 : 2)}${suffix}`;
 };
 
-function SimpleIcon({ kind }: { kind: 'home' | 'practice' | 'sessions' | 'progress' | 'more' }) {
-  const paths = {
-    home: 'M4.5 10.5 12 5.25l7.5 5.25v8.25h-4.5v-4.5h-6v4.5H4.5V10.5Z',
-    practice: 'M5.25 6.75h13.5v10.5H5.25V6.75Zm2.25 2.25v6h9v-6h-9Z',
-    sessions: 'M6 6h12v3H6V6Zm0 4.5h12v7.5H6v-7.5Z',
-    progress: 'M6 17.25V12h2.25v5.25H6Zm4.88 0v-9h2.25v9h-2.25Zm4.87 0v-6.75H18v6.75h-2.25Z',
-    more: 'M6.75 12a1.5 1.5 0 1 1 0-.01V12Zm5.25 0a1.5 1.5 0 1 1 0-.01V12Zm5.25 0a1.5 1.5 0 1 1 0-.01V12Z'
-  } as const;
-
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d={paths[kind]} fill="currentColor" />
-    </svg>
-  );
-}
-
 function ProgressCard({ card }: { card: ProgressMetricCard }) {
   return (
-    <article className="card progress-metric-card">
-      <div className="card-header">
-        <div>
-          <h2 className="card-title">{card.title}</h2>
-        </div>
-      </div>
-      <div className="progress-metric-body">
+    <AppCard title={card.title} className="progress-metric-card" bodyClassName="progress-metric-body">
         <p className="progress-metric-values">
           <span>{card.before}</span>
           <span className="progress-metric-arrow">to</span>
@@ -141,8 +105,7 @@ function ProgressCard({ card }: { card: ProgressMetricCard }) {
         <p className={card.trendPositive ? 'progress-trend positive' : 'progress-trend negative'}>
           {card.trendPositive ? 'Improving' : 'Needs attention'} {card.trendLabel}
         </p>
-      </div>
-    </article>
+    </AppCard>
   );
 }
 
@@ -277,15 +240,11 @@ export default function TrendsPageShell() {
           : `${standout.club} is your current benchmark club.`
     };
   }, [overview?.periodComparison?.clubs]);
+  const navItems = buildPrimaryNav('Progress');
 
   return (
-    <main className="page-shell progress-overview-page">
-      <header className="top-bar progress-top-bar">
-        <div>
-          <h1 className="progress-page-title">Progress Overview</h1>
-          <p className="progress-page-subtitle">Last 30 Days</p>
-        </div>
-      </header>
+    <AppPageShell className="progress-overview-page">
+      <AppHeaderBar title="Progress Overview" subtitle="Last 30 Days" className="progress-top-bar" />
 
       {error ? <p className="helper-text">{error}</p> : null}
       {loading ? <p className="helper-text">Loading progress snapshot...</p> : null}
@@ -297,49 +256,20 @@ export default function TrendsPageShell() {
           ))}
         </section>
 
-        <article className="card progress-streak-card">
+        <AppCard className="progress-streak-card" bodyClassName="progress-streak-body">
           <div className="progress-streak-badge">Practice Streak</div>
           <p className="progress-streak-value">{streakLabel}</p>
           <p className="progress-streak-copy">
             {overview?.trendDeltas?.summary ?? 'You are building real momentum. Keep stacking focused sessions.'}
           </p>
-        </article>
+        </AppCard>
 
-        <article className="card progress-highlight-card">
-          <div className="card-header">
-            <div>
-              <h2 className="card-title">{bestClub.title}</h2>
-            </div>
-          </div>
+        <AppCard title={bestClub.title} className="progress-highlight-card" bodyClassName="progress-highlight-body">
           <p className="progress-highlight-copy">{bestClub.copy}</p>
-        </article>
+        </AppCard>
       </div>
 
-      <nav className="bottom-nav progress-bottom-nav" aria-label="Primary">
-        {navItems.map((item) => (
-          <Link
-            key={item.label}
-            href={item.href}
-            className={`bottom-nav-item${item.active ? ' active' : ''}`}
-            aria-current={item.active ? 'page' : undefined}
-          >
-            <SimpleIcon
-              kind={
-                item.label === 'Home'
-                  ? 'home'
-                  : item.label === 'Practice'
-                    ? 'practice'
-                    : item.label === 'Sessions'
-                      ? 'sessions'
-                      : item.label === 'Progress'
-                        ? 'progress'
-                        : 'more'
-              }
-            />
-            <span>{item.label}</span>
-          </Link>
-        ))}
-      </nav>
-    </main>
+      <AppBottomNav items={navItems} className="progress-bottom-nav" />
+    </AppPageShell>
   );
 }

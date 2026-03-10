@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import type { CoachConstraintKey, CoachV2Plan, PracticePlanStep } from '@/types/coach';
+import { AppCard, AppHeaderBar, AppPageShell } from '@/components/app-shell';
 
 type RangeModeShellProps = {
   isSignedIn: boolean;
@@ -154,14 +154,6 @@ const toRangeState = (plan: CoachV2Plan): RangeState => {
   };
 };
 
-function BackIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M14.78 5.97 8.75 12l6.03 6.03-1.59 1.59L5.56 12l7.63-7.62 1.59 1.59Z" fill="currentColor" />
-    </svg>
-  );
-}
-
 export default function RangeModeShell({ isSignedIn }: RangeModeShellProps) {
   const [rangeState, setRangeState] = useState<RangeState>(placeholderState);
   const [isLoading, setIsLoading] = useState(isSignedIn);
@@ -254,26 +246,14 @@ export default function RangeModeShell({ isSignedIn }: RangeModeShellProps) {
   };
 
   return (
-    <main className="page-shell range-mode-page">
-      <header className="top-bar range-top-bar">
-        <Link href="/" className="icon-button range-back-button" aria-label="Back to home">
-          <BackIcon />
-        </Link>
-        <div className="range-top-bar-copy">
-          <h1 className="range-page-title">Range Mode</h1>
-        </div>
-      </header>
+    <AppPageShell className="range-mode-page">
+      <AppHeaderBar title="Range Mode" backHref="/" className="range-top-bar" />
 
       {error ? <p className="helper-text range-helper-banner">{error}</p> : null}
       {isLoading ? <p className="helper-text range-helper-banner">Loading today&apos;s coach plan...</p> : null}
 
       <div className="range-stack">
-        <section className="card range-card">
-          <div className="card-header">
-            <div>
-              <h2 className="card-title">Focus Summary</h2>
-            </div>
-          </div>
+        <AppCard title="Focus Summary" className="range-card" bodyClassName="range-card-body">
           <div className="range-focus-block">
             <p className="range-focus-title">{rangeState.focusLabel}</p>
             <p className="range-focus-goal">{rangeState.goalLine}</p>
@@ -281,14 +261,9 @@ export default function RangeModeShell({ isSignedIn }: RangeModeShellProps) {
               <div className="progress-fill" style={{ width: `${rangeState.focusProgressPct}%` }} />
             </div>
           </div>
-        </section>
+        </AppCard>
 
-        <section className="card range-card">
-          <div className="card-header">
-            <div>
-              <h2 className="card-title">Current Drill</h2>
-            </div>
-          </div>
+        <AppCard title="Current Drill" className="range-card" bodyClassName="range-card-body">
           <div className="range-drill-block">
             <p className="range-drill-title">{currentDrill.title}</p>
             <p className="range-drill-cue">{currentDrill.cue}</p>
@@ -300,26 +275,16 @@ export default function RangeModeShell({ isSignedIn }: RangeModeShellProps) {
               <div className="progress-fill" style={{ width: `${Math.max(8, drillProgressPct)}%` }} />
             </div>
           </div>
-        </section>
+        </AppCard>
 
-        <section className="card range-card">
-          <div className="card-header">
-            <div>
-              <h2 className="card-title">Current Pattern</h2>
-            </div>
-          </div>
+        <AppCard title="Current Pattern" className="range-card" bodyClassName="range-card-body">
           <div className="range-pattern-block">
             <p className="range-pattern-title">{rangeState.patternLabel}</p>
             <p className="range-pattern-copy">{rangeState.tendencyLine}</p>
           </div>
-        </section>
+        </AppCard>
 
-        <section className="card range-card">
-          <div className="card-header">
-            <div>
-              <h2 className="card-title">Quick Shot Log</h2>
-            </div>
-          </div>
+        <AppCard title="Quick Shot Log" className="range-card" bodyClassName="range-card-body">
           <div className="range-shot-grid">
             {shotOptions.map((option) => (
               <button
@@ -333,27 +298,22 @@ export default function RangeModeShell({ isSignedIn }: RangeModeShellProps) {
               </button>
             ))}
           </div>
-        </section>
+        </AppCard>
 
         <button type="button" className="primary-button range-finish-button" onClick={handleFinishDrill}>
           {nextDrill ? 'Finish Practice Block' : 'Finish Practice'}
         </button>
 
         {nextDrill ? (
-          <section className="card range-card range-next-card">
-            <div className="card-header">
-              <div>
-                <h2 className="card-title">Next Drill</h2>
-              </div>
-            </div>
+          <AppCard title="Next Drill" className="range-card range-next-card" bodyClassName="range-card-body">
             <div className="range-next-block">
               <p className="range-next-title">{nextDrill.title}</p>
               <p className="range-next-metric">Target: {nextDrill.targetShots} committed reps</p>
               <p className="range-next-metric">{nextDrill.cue}</p>
             </div>
-          </section>
+          </AppCard>
         ) : null}
       </div>
-    </main>
+    </AppPageShell>
   );
 }
