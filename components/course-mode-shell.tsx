@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { AppBottomNav, AppCard, AppHeaderBar, AppPageShell, buildPrimaryNav } from '@/components/app-shell';
 
 type Confidence = 'High' | 'Medium' | 'Low';
 
@@ -24,20 +25,6 @@ type CourseModeResult = {
   excludedLowConfidence: number;
 };
 
-type NavItem = {
-  label: string;
-  href: string;
-  active?: boolean;
-};
-
-const navItems: NavItem[] = [
-  { label: 'Home', href: '/' },
-  { label: 'Practice', href: '/range-mode' },
-  { label: 'Sessions', href: '/dashboard' },
-  { label: 'Progress', href: '/trends' },
-  { label: 'More', href: '/course-mode', active: true }
-];
-
 const fmt = (value: number | null, suffix = '') => (value === null ? '-' : `${value.toFixed(1)}${suffix}`);
 
 const confidenceTone = (value: Confidence) => {
@@ -45,30 +32,6 @@ const confidenceTone = (value: Confidence) => {
   if (value === 'Medium') return 'badge-warning';
   return 'badge-neutral';
 };
-
-function BackIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M14.78 5.97 8.75 12l6.03 6.03-1.59 1.59L5.56 12l7.63-7.62 1.59 1.59Z" fill="currentColor" />
-    </svg>
-  );
-}
-
-function SimpleIcon({ kind }: { kind: 'home' | 'practice' | 'sessions' | 'progress' | 'more' }) {
-  const paths = {
-    home: 'M4.5 10.5 12 5.25l7.5 5.25v8.25h-4.5v-4.5h-6v4.5H4.5V10.5Z',
-    practice: 'M5.25 6.75h13.5v10.5H5.25V6.75Zm2.25 2.25v6h9v-6h-9Z',
-    sessions: 'M6 6h12v3H6V6Zm0 4.5h12v7.5H6v-7.5Z',
-    progress: 'M6 17.25V12h2.25v5.25H6Zm4.88 0v-9h2.25v9h-2.25Zm4.87 0v-6.75H18v6.75h-2.25Z',
-    more: 'M6.75 12a1.5 1.5 0 1 1 0-.01V12Zm5.25 0a1.5 1.5 0 1 1 0-.01V12Zm5.25 0a1.5 1.5 0 1 1 0-.01V12Z'
-  } as const;
-
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d={paths[kind]} fill="currentColor" />
-    </svg>
-  );
-}
 
 function AlternateClubRow({ title, club }: { title: string; club: ClubRec | null }) {
   if (!club) return null;
@@ -95,6 +58,8 @@ export default function CourseModeShell() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CourseModeResult | null>(null);
+  const [loggingShot, setLoggingShot] = useState(false);
+  const [logStatus, setLogStatus] = useState<string | null>(null);
 
   const utilityRows = useMemo(() => {
     // TODO: Bind directional miss-bias from saved shot-pattern data once course-mode input includes target shape context.
@@ -133,6 +98,7 @@ export default function CourseModeShell() {
 
     setLoading(true);
     setError(null);
+    setLogStatus(null);
     const response = await fetch('/api/course-mode/recommendation', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -154,6 +120,31 @@ export default function CourseModeShell() {
     setLoading(false);
   };
 
+  const logShot = async () => {
+    setLoggingShot(true);
+    setLogStatus(null);
+
+    const response = await fetch('/api/coach/drills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        drillName: `Course Mode - ${featured.club}`,
+        durationMins: 1,
+        notes: `Target ${result ? result.adjustedTargetCarry.toFixed(1) : targetCarry} yds | Wind ${windDirection} ${windMph} mph | Lie ${lie} | Confidence ${featured.confidence}`,
+        recommendationSource: 'manual'
+      })
+    }).catch(() => null);
+
+    if (!response || !response.ok) {
+      setLogStatus('Could not log shot.');
+      setLoggingShot(false);
+      return;
+    }
+
+    setLogStatus(`Shot logged for ${featured.club}.`);
+    setLoggingShot(false);
+  };
+
   const featured = result?.recommended ?? {
     club: '8 Iron',
     carryMedian: 148,
@@ -163,19 +154,13 @@ export default function CourseModeShell() {
     sessionsUsed: 4,
     trendHref: '/trends'
   };
+  const navItems = buildPrimaryNav('More');
 
   return (
-    <main className="page-shell course-mode-page">
-      <header className="top-bar course-mode-topbar">
-        <Link href="/" className="icon-button course-mode-back" aria-label="Back to home">
-          <BackIcon />
-        </Link>
-        <div className="course-mode-heading">
-          <h1 className="course-mode-title">Course Mode</h1>
-        </div>
-      </header>
+    <AppPageShell className="course-mode-page">
+      <AppHeaderBar title="Course Mode" backHref="/" className="course-mode-topbar" />
 
-      <section className="card course-input-card">
+      <AppCard className="course-input-card" bodyClassName="course-input-card-body">
         <div className="course-form-grid">
           <label>
             Target Carry
@@ -210,9 +195,9 @@ export default function CourseModeShell() {
           {loading ? 'Getting Recommendation...' : 'Recommend Club'}
         </button>
         {error ? <p className="error">{error}</p> : null}
-      </section>
+      </AppCard>
 
-      <section className="card course-hero-card">
+      <AppCard className="course-hero-card" bodyClassName="course-hero-card-body">
         <div className="course-hero-banner" />
         <div className="course-hero-body">
           <div className="course-hero-target">
@@ -232,14 +217,9 @@ export default function CourseModeShell() {
             {result ? <span>{result.candidates} playable options</span> : <span>Ready for on-course recommendation</span>}
           </div>
         </div>
-      </section>
+      </AppCard>
 
-      <section className="card course-details-card">
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">Recommendation Details</h2>
-          </div>
-        </div>
+      <AppCard title="Recommendation Details" className="course-details-card" bodyClassName="course-details-card-body">
         <div className="course-options-list">
           <AlternateClubRow title="One Up" club={result?.oneUp ?? null} />
           <AlternateClubRow title="Recommended" club={featured} />
@@ -251,14 +231,9 @@ export default function CourseModeShell() {
         <p className="course-details-note">
           Consistency note: {featured.sessionsUsed} recent session{featured.sessionsUsed === 1 ? '' : 's'} behind this call.
         </p>
-      </section>
+      </AppCard>
 
-      <section className="card course-utility-card">
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">Quick Checks</h2>
-          </div>
-        </div>
+      <AppCard title="Quick Checks" className="course-utility-card" bodyClassName="course-utility-card-body">
         <div className="course-utility-list">
           {utilityRows.map((row) => (
             <div key={row.label} className="list-row course-utility-row">
@@ -267,42 +242,19 @@ export default function CourseModeShell() {
             </div>
           ))}
         </div>
-      </section>
+      </AppCard>
 
       <div className="course-action-stack">
-        <Link href={featured.trendHref} className="secondary-button course-secondary-link">
+        <a href={featured.trendHref} className="secondary-button course-secondary-link">
           View Recent Results
-        </Link>
-        <button type="button" className="primary-button course-primary-cta">
-          Log Shot
+        </a>
+        <button type="button" className="primary-button course-primary-cta" onClick={() => void logShot()} disabled={loggingShot}>
+          {loggingShot ? 'Logging Shot...' : 'Log Shot'}
         </button>
       </div>
+      {logStatus ? <p className={logStatus.includes('Could not') ? 'error' : 'helper-text'}>{logStatus}</p> : null}
 
-      <nav className="bottom-nav course-bottom-nav" aria-label="Primary">
-        {navItems.map((item) => (
-          <Link
-            key={item.label}
-            href={item.href}
-            className={`bottom-nav-item${item.active ? ' active' : ''}`}
-            aria-current={item.active ? 'page' : undefined}
-          >
-            <SimpleIcon
-              kind={
-                item.label === 'Home'
-                  ? 'home'
-                  : item.label === 'Practice'
-                    ? 'practice'
-                    : item.label === 'Sessions'
-                      ? 'sessions'
-                      : item.label === 'Progress'
-                        ? 'progress'
-                        : 'more'
-              }
-            />
-            <span>{item.label}</span>
-          </Link>
-        ))}
-      </nav>
-    </main>
+      <AppBottomNav items={navItems} className="course-bottom-nav" />
+    </AppPageShell>
   );
 }

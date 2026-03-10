@@ -148,6 +148,67 @@ ul {
   gap: var(--space-5);
 }
 
+.app-shell {
+  align-content: start;
+}
+
+.app-header-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.app-header-main {
+  display: grid;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.app-header-trailing {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.app-header-side {
+  width: 2.85rem;
+  height: 2.85rem;
+}
+
+.app-title-block {
+  min-width: 0;
+}
+
+.app-page-title {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+}
+
+.app-page-subtitle {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.app-back-button svg,
+.app-bottom-nav svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.app-card {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.app-card-body {
+  display: grid;
+  gap: 0.8rem;
+}
+
 .home-dashboard {
   max-width: 28rem;
   min-height: 100vh;
@@ -165,6 +226,15 @@ ul {
 
 .home-top-bar {
   align-items: center;
+}
+
+.home-top-bar .app-page-title {
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+
+.home-top-bar .app-page-subtitle {
+  font-size: 0.82rem;
 }
 
 .home-top-bar-copy {
@@ -338,6 +408,10 @@ ul {
   line-height: 1.1;
 }
 
+.range-top-bar .app-page-title {
+  font-size: 1.25rem;
+}
+
 .range-helper-banner {
   margin: 0;
   padding: 0 0.2rem;
@@ -448,6 +522,14 @@ ul {
   margin: 0;
   font-size: 1.2rem;
   line-height: 1.1;
+}
+
+.session-summary-topbar .app-page-title {
+  font-size: 1.2rem;
+}
+
+.session-summary-topbar .app-page-subtitle {
+  font-size: 0.88rem;
 }
 
 .session-summary-date {
@@ -562,6 +644,14 @@ ul {
   margin: 0;
   font-size: 1.35rem;
   line-height: 1.08;
+}
+
+.progress-top-bar .app-page-title {
+  font-size: 1.35rem;
+}
+
+.progress-top-bar .app-page-subtitle {
+  font-size: 0.9rem;
 }
 
 .progress-page-subtitle {
@@ -697,6 +787,10 @@ ul {
   margin: 0;
   font-size: 1.25rem;
   line-height: 1.08;
+}
+
+.course-mode-topbar .app-page-title {
+  font-size: 1.25rem;
 }
 
 .course-input-card,

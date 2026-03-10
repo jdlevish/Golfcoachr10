@@ -15,6 +15,7 @@ import { generateDeterministicPlan } from '@/lib/drill-library';
 import { resolveClubNormalization } from '@/lib/club-normalization';
 import type { RuleInsight, TrendDeltas } from '@/types/analysis';
 import type { CoachV2Plan } from '@/types/coach';
+import { AppCard, AppHeaderBar } from '@/components/app-shell';
 
 type SessionListItem = {
   id: string;
@@ -1355,20 +1356,13 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
           className="session-detail-sticky"
         >
           <div className="session-summary-shell">
-            <div className="top-bar session-summary-topbar">
-              <button
-                type="button"
-                className="icon-button session-summary-back"
-                onClick={() => setSelectedSession(null)}
-                aria-label="Back to saved sessions"
-              >
-                &lt;
-              </button>
-              <div className="session-summary-heading">
-                <h3 className="session-summary-title">Session Summary</h3>
-                <p className="session-summary-date">{formatSessionDate(selectedSession.sessionDate)}</p>
-              </div>
-            </div>
+            <AppHeaderBar
+              title="Session Summary"
+              subtitle={formatSessionDate(selectedSession.sessionDate)}
+              titleTag="h3"
+              onBack={() => setSelectedSession(null)}
+              className="session-summary-topbar"
+            />
 
             <div className="flow-tabs sticky-flow-tabs" role="tablist" aria-label="Session insight tabs">
               <button
@@ -1691,12 +1685,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
           {sessionView === 'coach' && (
             <>
               <div className="session-summary-grid">
-                <article className="coach-card session-summary-card">
-                  <div className="card-header">
-                    <div>
-                      <h3 className="card-title">Primary Issue</h3>
-                    </div>
-                  </div>
+                <AppCard title="Primary Issue" className="session-summary-card" bodyClassName="session-summary-card-body">
                   <p className="session-issue-headline">{sessionIssueHeadline}</p>
                   <p className="session-issue-line">
                     Most Common Miss: <strong>{selectedSessionMissPatterns?.overall.topShape ?? 'Unavailable'}</strong>
@@ -1704,14 +1693,9 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
                   </p>
                   <p className="session-issue-line">{sessionCurrentMetricLine}</p>
                   <p className="session-issue-line">{sessionGoalMetricLine}</p>
-                </article>
+                </AppCard>
 
-                <article className="coach-card session-summary-card">
-                  <div className="card-header">
-                    <div>
-                      <h3 className="card-title">Shot Pattern</h3>
-                    </div>
-                  </div>
+                <AppCard title="Shot Pattern" className="session-summary-card" bodyClassName="session-summary-card-body">
                   {sessionSummaryPatternPoints.length > 0 ? (
                     <div className="session-pattern-viz">
                       <svg viewBox="0 0 320 190" role="img" aria-label="Session shot pattern visualization">
@@ -1736,14 +1720,9 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
                   <p className="session-pattern-caption">
                     Center line shows target start line. Dots show how the session clustered relative to center.
                   </p>
-                </article>
+                </AppCard>
 
-                <article className="coach-card session-summary-card">
-                  <div className="card-header">
-                    <div>
-                      <h3 className="card-title">Gapping Ladder</h3>
-                    </div>
-                  </div>
+                <AppCard title="Gapping Ladder" className="session-summary-card" bodyClassName="session-summary-card-body">
                   {selectedSession.gappingLadder.rows.length === 0 ? (
                     <p className="helper-text">No carry ladder data in this session yet.</p>
                   ) : (
@@ -1756,14 +1735,9 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
                       ))}
                     </div>
                   )}
-                </article>
+                </AppCard>
 
-                <article className="coach-card session-summary-card">
-                  <div className="card-header">
-                    <div>
-                      <h3 className="card-title">Coach&apos;s Takeaway</h3>
-                    </div>
-                  </div>
+                <AppCard title="Coach&apos;s Takeaway" className="session-summary-card" bodyClassName="session-summary-card-body">
                   <p className="session-takeaway-text">{sessionTakeawayText}</p>
                   {coachSummary?.whyThisHappens ? (
                     <p className="session-issue-line">
@@ -1789,7 +1763,7 @@ export default function SessionHistory({ refreshKey }: SessionHistoryProps) {
                     </button>
                   </div>
                   {analysisStatus ? <p className="helper-text">{analysisStatus}</p> : null}
-                </article>
+                </AppCard>
               </div>
 
               {selectedSession.comparison.comparedToSessionId ? (
