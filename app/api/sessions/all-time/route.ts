@@ -78,7 +78,7 @@ const buildPeriodComparison = (sessions: ParsedSession[], window: TimeWindow) =>
 
   const aggregateClubMetric = (
     periodSessions: ParsedSession[],
-    metric: 'medianCarryYds' | 'offlineStdDevYds'
+    metric: 'medianCarryYds' | 'carryStdDevYds' | 'offlineStdDevYds'
   ) => {
     const bucket = new Map<string, number[]>();
     for (const session of periodSessions) {
@@ -97,16 +97,25 @@ const buildPeriodComparison = (sessions: ParsedSession[], window: TimeWindow) =>
 
   const currentCarry = aggregateClubMetric(currentPeriodSessions, 'medianCarryYds');
   const previousCarry = aggregateClubMetric(previousPeriodSessions, 'medianCarryYds');
+  const currentCarryStdDev = aggregateClubMetric(currentPeriodSessions, 'carryStdDevYds');
+  const previousCarryStdDev = aggregateClubMetric(previousPeriodSessions, 'carryStdDevYds');
   const currentOffline = aggregateClubMetric(currentPeriodSessions, 'offlineStdDevYds');
   const previousOffline = aggregateClubMetric(previousPeriodSessions, 'offlineStdDevYds');
 
   const sharedClubs = Array.from(currentCarry.keys()).filter(
-    (club) => previousCarry.has(club) && currentOffline.has(club) && previousOffline.has(club)
+    (club) =>
+      previousCarry.has(club) &&
+      currentCarryStdDev.has(club) &&
+      previousCarryStdDev.has(club) &&
+      currentOffline.has(club) &&
+      previousOffline.has(club)
   );
 
   const clubs = sharedClubs.map((club) => {
     const currentCarryValue = currentCarry.get(club) ?? null;
     const previousCarryValue = previousCarry.get(club) ?? null;
+    const currentCarryStdDevValue = currentCarryStdDev.get(club) ?? null;
+    const previousCarryStdDevValue = previousCarryStdDev.get(club) ?? null;
     const currentOfflineValue = currentOffline.get(club) ?? null;
     const previousOfflineValue = previousOffline.get(club) ?? null;
     return {
@@ -118,6 +127,14 @@ const buildPeriodComparison = (sessions: ParsedSession[], window: TimeWindow) =>
           previousCarryValue === null || currentCarryValue === null
             ? null
             : currentCarryValue - previousCarryValue
+      },
+      carryStdDevChange: {
+        previous: previousCarryStdDevValue,
+        current: currentCarryStdDevValue,
+        delta:
+          previousCarryStdDevValue === null || currentCarryStdDevValue === null
+            ? null
+            : currentCarryStdDevValue - previousCarryStdDevValue
       },
       offlineStdDevChange: {
         previous: previousOfflineValue,
