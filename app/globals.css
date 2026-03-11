@@ -8,11 +8,12 @@
   --primary: #416d4d;
   --primary-soft: #edf2ea;
   --accent: #b9b35b;
+  --accent-soft: #f3eed6;
   --danger: #c75b39;
   --success: #6c9446;
-  --shadow-sm: 0 2px 3px rgba(63, 59, 49, 0.08), 0 10px 22px rgba(63, 59, 49, 0.05);
-  --shadow-md: 0 6px 10px rgba(63, 59, 49, 0.08), 0 18px 34px rgba(63, 59, 49, 0.07);
-  --shadow-lg: 0 10px 18px rgba(63, 59, 49, 0.1), 0 24px 46px rgba(63, 59, 49, 0.09);
+  --shadow-sm: 0 1px 2px rgba(63, 59, 49, 0.05), 0 10px 24px rgba(63, 59, 49, 0.05);
+  --shadow-md: 0 4px 10px rgba(63, 59, 49, 0.07), 0 18px 36px rgba(63, 59, 49, 0.07);
+  --shadow-lg: 0 10px 18px rgba(63, 59, 49, 0.09), 0 28px 52px rgba(63, 59, 49, 0.1);
   --radius-sm: 10px;
   --radius-md: 14px;
   --radius-lg: 18px;
@@ -49,7 +50,7 @@ body {
   min-height: 100vh;
   font-family: var(--font-sans);
   color: var(--text);
-  line-height: 1.5;
+  line-height: 1.45;
   background: linear-gradient(180deg, #d8d7d4 0%, #ecebe8 14%, #e9e8e4 100%);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -145,7 +146,7 @@ ul {
 
 .page-shell {
   display: grid;
-  gap: var(--space-5);
+  gap: 1rem;
 }
 
 .app-shell {
@@ -156,7 +157,9 @@ ul {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.8rem;
+  gap: 0.9rem;
+  padding-block: 1rem;
+  box-shadow: var(--shadow-md);
 }
 
 .app-header-main {
@@ -185,12 +188,14 @@ ul {
   font-size: 1.25rem;
   line-height: 1.08;
   letter-spacing: -0.03em;
+  font-weight: 700;
 }
 
 .app-page-subtitle {
   margin: 0.2rem 0 0;
   color: var(--muted);
   font-size: 0.88rem;
+  letter-spacing: -0.01em;
 }
 
 .app-back-button svg,
@@ -201,12 +206,19 @@ ul {
 
 .app-card {
   display: grid;
-  gap: 0.8rem;
+  gap: 0.9rem;
+  border-color: rgba(212, 216, 208, 0.98);
+  box-shadow: var(--shadow-sm);
+}
+
+.app-card-header > div {
+  display: grid;
+  gap: 0.22rem;
 }
 
 .app-card-body {
   display: grid;
-  gap: 0.8rem;
+  gap: 0.9rem;
 }
 
 .home-dashboard {
@@ -216,12 +228,12 @@ ul {
 
 .home-layout {
   display: grid;
-  gap: 0.85rem;
+  gap: 1rem;
 }
 
 .home-stack {
   display: grid;
-  gap: 0.85rem;
+  gap: 1rem;
 }
 
 .home-top-bar {
@@ -295,9 +307,13 @@ ul {
   gap: 0.9rem;
 }
 
+.home-card-body {
+  gap: 1rem;
+}
+
 .home-focus-block {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.5rem;
   padding-top: 0.15rem;
 }
 
@@ -310,6 +326,7 @@ ul {
 .home-focus-text {
   margin: 0;
   color: color-mix(in srgb, var(--text) 80%, var(--muted));
+  line-height: 1.55;
 }
 
 .home-mini-title {
@@ -344,6 +361,10 @@ ul {
   padding: 0.15rem 0 0.45rem;
 }
 
+.home-session-score .badge {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
 .home-session-score strong {
   font-size: 1.6rem;
   line-height: 1;
@@ -355,7 +376,9 @@ ul {
 }
 
 .home-tool-button {
+  gap: 0.7rem;
   min-height: 3.2rem;
+  padding-inline: 1rem;
   justify-content: flex-start;
 }
 
@@ -365,11 +388,14 @@ ul {
 
 .home-progress-row {
   align-items: center;
+  justify-content: space-between;
   padding-block: 0.8rem;
 }
 
 .home-progress-row strong {
   font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .home-progress-arrow {
@@ -420,7 +446,7 @@ ul {
 
 .range-stack {
   display: grid;
-  gap: 0.9rem;
+  gap: 1rem;
 }
 
 .range-card {
@@ -428,12 +454,16 @@ ul {
   gap: 0.9rem;
 }
 
+.range-card-body {
+  gap: 1rem;
+}
+
 .range-focus-block,
 .range-drill-block,
 .range-pattern-block,
 .range-next-block {
   display: grid;
-  gap: 0.55rem;
+  gap: 0.6rem;
 }
 
 .range-focus-title,
@@ -454,6 +484,7 @@ ul {
   margin: 0;
   color: color-mix(in srgb, var(--text) 84%, var(--muted));
   font-size: 0.96rem;
+  line-height: 1.5;
 }
 
 .range-focus-progress,
@@ -464,7 +495,8 @@ ul {
 
 .range-drill-meta {
   display: grid;
-  gap: 0.25rem;
+  gap: 0.3rem;
+  padding-top: 0.1rem;
   color: var(--text);
   font-size: 0.95rem;
   font-weight: 600;
@@ -483,11 +515,13 @@ ul {
   align-items: flex-start;
   flex-direction: column;
   text-align: left;
+  box-shadow: 0 4px 12px rgba(63, 59, 49, 0.06);
 }
 
 .range-shot-button strong {
   font-size: 1.2rem;
   line-height: 1;
+  letter-spacing: -0.03em;
 }
 
 .range-finish-button {
@@ -540,12 +574,16 @@ ul {
 
 .session-summary-grid {
   display: grid;
-  gap: 0.9rem;
+  gap: 1rem;
 }
 
 .session-summary-card {
   display: grid;
   gap: 0.8rem;
+}
+
+.session-summary-card .app-card-body {
+  gap: 1rem;
 }
 
 .session-issue-headline {
@@ -560,6 +598,15 @@ ul {
 .session-takeaway-text {
   margin: 0;
   color: color-mix(in srgb, var(--text) 86%, var(--muted));
+}
+
+.session-issue-line strong,
+.session-gapping-row strong,
+.course-option-meta strong,
+.course-utility-row strong {
+  color: var(--text);
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .session-takeaway-text {
@@ -662,7 +709,7 @@ ul {
 
 .progress-overview-stack {
   display: grid;
-  gap: 0.95rem;
+  gap: 1rem;
 }
 
 .progress-metric-card {
@@ -672,12 +719,13 @@ ul {
 
 .progress-metric-body {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.65rem;
 }
 
 .progress-metric-values {
   display: flex;
   align-items: baseline;
+  justify-content: space-between;
   gap: 0.55rem;
   margin: 0;
   font-size: 1.4rem;
@@ -697,17 +745,23 @@ ul {
 }
 
 .progress-trend {
+  width: fit-content;
   margin: 0;
+  padding: 0.28rem 0.65rem;
+  border-radius: var(--radius-pill);
   font-size: 0.95rem;
   font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .progress-trend.positive {
   color: var(--success);
+  background: rgba(47, 143, 91, 0.11);
 }
 
 .progress-trend.negative {
   color: var(--danger);
+  background: rgba(199, 91, 57, 0.1);
 }
 
 .progress-streak-card {
@@ -753,6 +807,14 @@ ul {
 .progress-highlight-card {
   display: grid;
   gap: 0.6rem;
+  border-color: rgba(203, 197, 145, 0.9);
+  background:
+    linear-gradient(180deg, rgba(252, 250, 244, 0.98), rgba(246, 242, 230, 0.96)),
+    radial-gradient(circle at top right, rgba(185, 179, 91, 0.08), transparent 34%);
+}
+
+.progress-highlight-body {
+  gap: 0.7rem;
 }
 
 .progress-highlight-copy {
@@ -801,6 +863,13 @@ ul {
   gap: 0.9rem;
 }
 
+.course-input-card-body,
+.course-details-card-body,
+.course-utility-card-body,
+.course-hero-card-body {
+  gap: 1rem;
+}
+
 .course-hero-card {
   overflow: hidden;
   padding: 0;
@@ -835,7 +904,7 @@ ul {
 
 .course-hero-body {
   display: grid;
-  gap: 0.8rem;
+  gap: 0.95rem;
   padding: 1rem;
 }
 
@@ -850,6 +919,7 @@ ul {
   font-size: 1.5rem;
   line-height: 1;
   letter-spacing: -0.04em;
+  color: var(--text);
 }
 
 .course-hero-main {
@@ -875,6 +945,7 @@ ul {
   font-size: 1.8rem;
   line-height: 1.05;
   letter-spacing: -0.04em;
+  font-weight: 700;
 }
 
 .course-hero-support {
@@ -894,13 +965,19 @@ ul {
 .course-option-row,
 .course-utility-row {
   align-items: center;
+  justify-content: space-between;
   padding-block: 0.85rem;
+}
+
+.course-option-row + .course-option-row,
+.course-utility-row + .course-utility-row {
+  border-top: 1px solid rgba(217, 219, 212, 0.78);
 }
 
 .course-option-meta {
   display: grid;
   justify-items: end;
-  gap: 0.15rem;
+  gap: 0.2rem;
   text-align: right;
   color: var(--muted);
   font-size: 0.86rem;
@@ -916,6 +993,10 @@ ul {
   width: 100%;
 }
 
+.course-action-stack {
+  gap: 0.8rem;
+}
+
 .course-bottom-nav {
   margin-top: auto;
 }
@@ -928,13 +1009,15 @@ ul {
   padding: 1.1rem 1.25rem;
   border: 1px solid rgba(217, 219, 212, 0.95);
   border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, rgba(253, 252, 248, 0.98), rgba(248, 246, 241, 0.95));
-  box-shadow: var(--shadow-sm);
+  background:
+    linear-gradient(180deg, rgba(253, 252, 248, 0.98), rgba(248, 246, 241, 0.95)),
+    radial-gradient(circle at top right, rgba(65, 109, 77, 0.04), transparent 34%);
+  box-shadow: var(--shadow-md);
 }
 
 .section {
   display: grid;
-  gap: var(--space-4);
+  gap: 0.95rem;
 }
 
 .section-header,
@@ -964,7 +1047,9 @@ ul {
   position: relative;
   border: 1px solid rgba(217, 219, 212, 0.98);
   border-radius: var(--radius-md);
-  background: linear-gradient(180deg, rgba(252, 251, 247, 0.99), rgba(246, 244, 238, 0.96));
+  background:
+    linear-gradient(180deg, rgba(252, 251, 247, 0.99), rgba(246, 244, 238, 0.96)),
+    radial-gradient(circle at top right, rgba(65, 109, 77, 0.025), transparent 32%);
   box-shadow: var(--shadow-sm);
 }
 
@@ -978,14 +1063,14 @@ ul {
 .viz-card,
 .uploader,
 .term-key {
-  padding: 1rem 1rem 1.05rem;
+  padding: 1rem 1rem 1.1rem;
 }
 
 .card-title {
   margin: 0;
   font-size: 1.05rem;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
 }
 
 .card-subtitle,
@@ -1004,7 +1089,7 @@ ul {
 
 .card-header {
   margin: -1rem -1rem 0.85rem;
-  padding: 0.75rem 1rem 0.8rem;
+  padding: 0.8rem 1rem 0.85rem;
   border-bottom-color: rgba(38, 61, 44, 0.12);
   border-top-left-radius: calc(var(--radius-md) - 1px);
   border-top-right-radius: calc(var(--radius-md) - 1px);
@@ -1075,7 +1160,7 @@ ul {
   border: 1px solid rgba(217, 219, 212, 0.96);
   border-radius: calc(var(--radius-md) - 2px);
   background: linear-gradient(180deg, #fdfcf8, #f5f2ea);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72), 0 2px 6px rgba(63, 59, 49, 0.035);
 }
 
 .metric-item {
@@ -1123,7 +1208,7 @@ ul {
 .gap-compressed,
 .confidence-medium {
   color: color-mix(in srgb, var(--accent) 62%, black);
-  background: rgba(212, 167, 44, 0.16);
+  background: rgba(212, 167, 44, 0.18);
   border-color: rgba(212, 167, 44, 0.24);
 }
 
@@ -1155,16 +1240,25 @@ ul {
   justify-content: center;
   gap: 0.5rem;
   min-height: 2.85rem;
-  padding: 0.7rem 1rem;
+  padding: 0.72rem 1rem;
   border-radius: 14px;
   border: 1px solid transparent;
   font-weight: 700;
+  letter-spacing: -0.01em;
   transition:
     transform 160ms ease,
     box-shadow 160ms ease,
     background-color 160ms ease,
     border-color 160ms ease,
     color 160ms ease;
+}
+
+.primary-button svg,
+.secondary-button svg,
+.icon-button svg,
+.badge svg,
+.bottom-nav-item svg {
+  flex: 0 0 auto;
 }
 
 .primary-button,
@@ -1175,7 +1269,7 @@ ul {
   background:
     linear-gradient(90deg, rgba(69, 110, 79, 0.98), rgba(46, 98, 74, 0.96) 68%, rgba(130, 154, 77, 0.9)),
     radial-gradient(circle at 25% 30%, rgba(255, 255, 255, 0.14), transparent 30%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 6px 14px rgba(47, 87, 60, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 8px 18px rgba(47, 87, 60, 0.18);
 }
 
 .secondary-button,
@@ -1185,8 +1279,10 @@ ul {
 .theme-toggle {
   color: var(--primary);
   border-color: rgba(200, 204, 194, 0.95);
-  background: linear-gradient(180deg, #fbfaf6, #eeefe7);
-  box-shadow: 0 2px 6px rgba(63, 59, 49, 0.06);
+  background:
+    linear-gradient(180deg, #fbfaf6, #eeefe7),
+    radial-gradient(circle at top right, rgba(65, 109, 77, 0.03), transparent 35%);
+  box-shadow: 0 2px 8px rgba(63, 59, 49, 0.06);
 }
 
 .icon-button {
@@ -1195,7 +1291,7 @@ ul {
   color: var(--primary);
   border-color: rgba(200, 204, 194, 0.95);
   background: rgba(251, 250, 246, 0.95);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 8px rgba(63, 59, 49, 0.06);
 }
 
 .primary-button:hover,
@@ -1247,7 +1343,7 @@ ul {
   border-radius: calc(var(--radius-lg) + 2px);
   background: rgba(250, 249, 244, 0.95);
   backdrop-filter: blur(14px);
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 8px 24px rgba(63, 59, 49, 0.11);
 }
 
 .bottom-nav-item {
@@ -1264,6 +1360,7 @@ ul {
 .bottom-nav-item.active {
   color: var(--primary);
   background: rgba(230, 237, 226, 0.95);
+  box-shadow: inset 0 0 0 1px rgba(200, 204, 194, 0.78);
 }
 
 .list-row {
@@ -1335,6 +1432,29 @@ input[type='file'] {
   color: var(--muted);
 }
 
+.performance-history-panel {
+  gap: 1rem;
+}
+
+.performance-history-header {
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.performance-history-heading {
+  display: grid;
+  gap: 0.32rem;
+  min-width: 0;
+}
+
+.performance-history-header h2 {
+  margin: 0;
+}
+
+.performance-history-header .helper-text {
+  max-width: 38rem;
+}
+
 .sticky-session-nav,
 .sticky-flow-tabs {
   position: sticky;
@@ -1358,6 +1478,82 @@ input[type='file'] {
 .full-range-data {
   display: grid;
   gap: var(--space-3);
+}
+
+.performance-history-panel > .stack[aria-label='Saved sessions'] {
+  gap: 1rem;
+}
+
+.performance-history-panel > .stack[aria-label='Saved sessions'] > h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+}
+
+.summary-grid article {
+  display: grid;
+  align-content: start;
+  gap: 0.35rem;
+  padding: 1rem 1rem 1.05rem;
+}
+
+.summary-grid h3 {
+  margin: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.summary-grid p {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.025em;
+}
+
+.summary-grid .helper-text {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+}
+
+.coach-card > h3,
+.auth-panel > .section-header + h3,
+.auth-panel > h3 {
+  margin-bottom: 0.65rem;
+}
+
+.coach-card > p,
+.coach-card > ul,
+.coach-card > table,
+.coach-card > details {
+  margin-top: 0;
+}
+
+.time-window-row {
+  gap: 0.55rem;
+  margin-bottom: 0.2rem;
+}
+
+.flow-tabs {
+  margin-bottom: 0.2rem;
+}
+
+.row-actions {
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.row-actions button {
+  min-height: 2.35rem;
+  padding: 0.58rem 0.85rem;
 }
 
 .viz-card svg {
@@ -1384,10 +1580,16 @@ table {
   margin-top: var(--space-3);
 }
 
+table td > .helper-text,
+table td > .error {
+  margin-top: 0.2rem;
+}
+
 th,
 td {
-  padding: 0.85rem 0.45rem;
+  padding: 0.95rem 0.55rem;
   text-align: left;
+  vertical-align: top;
   border-bottom: 1px solid rgba(217, 219, 212, 0.9);
 }
 
@@ -1401,6 +1603,23 @@ th {
 
 tbody tr:hover {
   background: rgba(235, 239, 227, 0.55);
+}
+
+tbody td {
+  line-height: 1.4;
+}
+
+tbody td[data-label='Action'] {
+  min-width: 10rem;
+}
+
+tbody td[data-label='Source File'] {
+  color: color-mix(in srgb, var(--text) 82%, var(--muted));
+}
+
+tbody td[data-label='Avg Carry'],
+tbody td[data-label='Shots'] {
+  font-weight: 600;
 }
 
 .theme-toggle {
@@ -1701,4 +1920,12 @@ tbody tr:hover {
   .viz-card.large svg {
     height: 250px;
   }
+}
+.helper-text,
+.error {
+  line-height: 1.45;
+}
+
+.helper-text {
+  color: color-mix(in srgb, var(--text) 72%, var(--muted));
 }
