@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CoachV2Plan } from '@/types/coach';
 import { AppBottomNav, AppCard, AppHeaderBar, AppPageShell, buildPrimaryNav } from '@/components/app-shell';
 
+type ProgressRange = '1w' | '1m' | '1y';
+
 type ClubTrendPoint = {
   sessionId: string;
   date: string;
@@ -35,12 +37,35 @@ type AllTimePayload = {
         current: number | null;
         delta: number | null;
       };
+      carryStdDevChange: {
+        previous: number | null;
+        current: number | null;
+        delta: number | null;
+      };
       offlineStdDevChange: {
         previous: number | null;
         current: number | null;
         delta: number | null;
       };
     }>;
+    currentPeriod: {
+      from: string;
+      to: string;
+      sessions: number;
+      avgShotCount: number | null;
+    };
+    previousPeriod: {
+      from: string;
+      to: string;
+      sessions: number;
+      avgShotCount: number | null;
+    };
+    sessionFrequencyChange: {
+      previous: number;
+      current: number;
+      delta: number;
+      deltaPct: number | null;
+    };
   } | null;
 };
 
@@ -76,6 +101,15 @@ const placeholderCards: ProgressMetricCard[] = [
   }
 ];
 
+const progressRangeOptions: Array<{ value: ProgressRange; label: string; subtitle: string; seriesRange: string }> = [
+  { value: '1w', label: 'Week', subtitle: 'This Week vs Previous Week', seriesRange: '7d' },
+  { value: '1m', label: 'Month', subtitle: 'This Month vs Previous Month', seriesRange: '30d' },
+  { value: '1y', label: 'Year', subtitle: 'This Year vs Previous Year', seriesRange: '1y' }
+];
+
+const getProgressRangeConfig = (range: ProgressRange) =>
+  progressRangeOptions.find((option) => option.value === range) ?? progressRangeOptions[1];
+
 const formatDeltaPct = (before: number | null, after: number | null, lowerIsBetter: boolean) => {
   if (before === null || after === null || before === 0) {
     return { label: 'Building baseline', positive: true };
@@ -110,10 +144,12 @@ function ProgressCard({ card }: { card: ProgressMetricCard }) {
 }
 
 export default function TrendsPageShell() {
+  const [selectedRange, setSelectedRange] = useState<ProgressRange>('1m');
   const [overview, setOverview] = useState<AllTimePayload | null>(null);
   const [series, setSeries] = useState<ClubTrendPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const activeRange = getProgressRangeConfig(selectedRange);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -123,7 +159,7 @@ export default function TrendsPageShell() {
         setLoading(true);
         setError(null);
 
-        const overviewResponse = await fetch('/api/sessions/all-time?window=1m', {
+        const overviewResponse = await fetch(`/api/sessions/all-time?window=${selectedRange}`, {
           cache: 'no-store',
           signal: controller.signal
         });
@@ -145,7 +181,7 @@ export default function TrendsPageShell() {
           return;
         }
 
-        const params = new URLSearchParams({ club: focusClub, range: '30d' });
+        const params = new URLSearchParams({ club: focusClub, range: activeRange.seriesRange });
         const seriesResponse = await fetch(`/api/sessions/trends/club?${params.toString()}`, {
           cache: 'no-store',
           signal: controller.signal
@@ -172,9 +208,65 @@ export default function TrendsPageShell() {
     void loadOverview();
 
     return () => controller.abort();
-  }, []);
+  }, [activeRange.seriesRange, selectedRange]);
+
+  const comparisonClub = useMemo(() => {
+    const clubs = overview?.periodComparison?.clubs ?? [];
+    if (!clubs.length) return null;
+
+    const focusClub = overview?.coachV2Plan?.primaryConstraint.focusClub;
+    return (
+      clubs.find((club) => club.club.toLowerCase() === focusClub?.toLowerCase()) ??
+      clubs
+        .slice()
+        .sort((a, b) => (a.offlineStdDevChange.delta ?? 0) - (b.offlineStdDevChange.delta ?? 0))[0] ??
+      null
+    );
+  }, [overview?.coachV2Plan?.primaryConstraint.focusClub, overview?.periodComparison?.clubs]);
 
   const metricCards = useMemo(() => {
+    if (comparisonClub) {
+      const directionTrend = formatDeltaPct(
+        comparisonClub.offlineStdDevChange.previous,
+        comparisonClub.offlineStdDevChange.current,
+        true
+      );
+      const carryTrend = formatDeltaPct(
+        comparisonClub.carryStdDevChange.previous,
+        comparisonClub.carryStdDevChange.current,
+        true
+      );
+      const distanceTrend = formatDeltaPct(
+        comparisonClub.carryMedianChange.previous,
+        comparisonClub.carryMedianChange.current,
+        false
+      );
+
+      return [
+        {
+          title: 'Direction Control',
+          before: formatValue(comparisonClub.offlineStdDevChange.previous, 'y'),
+          after: formatValue(comparisonClub.offlineStdDevChange.current, 'y'),
+          trendLabel: directionTrend.label,
+          trendPositive: directionTrend.positive
+        },
+        {
+          title: 'Carry Consistency',
+          before: formatValue(comparisonClub.carryStdDevChange.previous, 'y'),
+          after: formatValue(comparisonClub.carryStdDevChange.current, 'y'),
+          trendLabel: carryTrend.label,
+          trendPositive: carryTrend.positive
+        },
+        {
+          title: 'Carry Distance',
+          before: formatValue(comparisonClub.carryMedianChange.previous, 'y'),
+          after: formatValue(comparisonClub.carryMedianChange.current, 'y'),
+          trendLabel: distanceTrend.label,
+          trendPositive: distanceTrend.positive
+        }
+      ];
+    }
+
     if (series.length < 2) return placeholderCards;
 
     const sorted = [...series].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -208,7 +300,7 @@ export default function TrendsPageShell() {
         trendPositive: strikeTrend.positive
       }
     ];
-  }, [series]);
+  }, [comparisonClub, series]);
 
   const streakLabel = overview ? `${overview.sessionsCount} Sessions` : '6 Sessions';
   const bestClub = useMemo(() => {
@@ -216,7 +308,7 @@ export default function TrendsPageShell() {
     if (!clubs.length) {
       return {
         title: 'Best Club',
-        copy: '7 Iron tightened direction by 3.0y over the month.'
+        copy: `Your standout club for this ${activeRange.label.toLowerCase()} will show here.`
       };
     }
 
@@ -239,12 +331,41 @@ export default function TrendsPageShell() {
           ? `${standout.club} tightened direction by ${Math.abs(delta).toFixed(1)}y.`
           : `${standout.club} is your current benchmark club.`
     };
-  }, [overview?.periodComparison?.clubs]);
+  }, [activeRange.label, overview?.periodComparison?.clubs]);
+  const rangeSummary = useMemo(() => {
+    const comparison = overview?.periodComparison;
+    if (!comparison) {
+      return {
+        badge: 'Selected Range',
+        value: streakLabel,
+        copy: 'Your current range will compare against the previous matching window once enough data is available.'
+      };
+    }
+
+    return {
+      badge: `${activeRange.label} Sessions`,
+      value: `${comparison.currentPeriod.sessions}`,
+      copy: `Previous ${activeRange.label.toLowerCase()}: ${comparison.previousPeriod.sessions} session${comparison.previousPeriod.sessions === 1 ? '' : 's'}.`
+    };
+  }, [activeRange.label, overview?.periodComparison, streakLabel]);
   const navItems = buildPrimaryNav('Progress');
 
   return (
     <AppPageShell className="progress-overview-page">
-      <AppHeaderBar title="Progress Overview" subtitle="Last 30 Days" className="progress-top-bar" />
+      <AppHeaderBar title="Progress Overview" subtitle={activeRange.subtitle} className="progress-top-bar">
+        <div className="time-window-row" role="group" aria-label="Progress overview ranges">
+          {progressRangeOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={selectedRange === option.value ? 'window-button active' : 'window-button'}
+              onClick={() => setSelectedRange(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </AppHeaderBar>
 
       {error ? <p className="helper-text">{error}</p> : null}
       {loading ? <p className="helper-text">Loading progress snapshot...</p> : null}
@@ -257,10 +378,12 @@ export default function TrendsPageShell() {
         </section>
 
         <AppCard className="progress-streak-card" bodyClassName="progress-streak-body">
-          <div className="progress-streak-badge">Practice Streak</div>
-          <p className="progress-streak-value">{streakLabel}</p>
+          <div className="progress-streak-badge">{rangeSummary.badge}</div>
+          <p className="progress-streak-value">{rangeSummary.value}</p>
           <p className="progress-streak-copy">
-            {overview?.trendDeltas?.summary ?? 'You are building real momentum. Keep stacking focused sessions.'}
+            {overview?.periodComparison
+              ? rangeSummary.copy
+              : overview?.trendDeltas?.summary ?? 'You are building real momentum. Keep stacking focused sessions.'}
           </p>
         </AppCard>
 
