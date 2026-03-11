@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { AppBottomNav, AppCard, AppHeaderBar, AppPageShell, buildPrimaryNav } from '@/components/app-shell';
 
@@ -23,6 +23,35 @@ type CourseModeResult = {
   oneDown: ClubRec | null;
   candidates: number;
   excludedLowConfidence: number;
+};
+
+type ShotOutcome =
+  | 'left'
+  | 'right'
+  | 'center'
+  | 'short'
+  | 'long'
+  | 'green'
+  | 'fairway'
+  | 'hazard'
+  | 'shank';
+
+const outcomeGroups: Array<{ label: string; values: ShotOutcome[] }> = [
+  { label: 'Start Line', values: ['left', 'center', 'right'] },
+  { label: 'Distance', values: ['short', 'long'] },
+  { label: 'Result', values: ['green', 'fairway', 'hazard', 'shank'] }
+];
+
+const outcomeLabels: Record<ShotOutcome, string> = {
+  left: 'Left',
+  right: 'Right',
+  center: 'Center',
+  short: 'Short',
+  long: 'Long',
+  green: 'Green',
+  fairway: 'Fairway',
+  hazard: 'Hazard',
+  shank: 'Shank'
 };
 
 const fmt = (value: number | null, suffix = '') => (value === null ? '-' : `${value.toFixed(1)}${suffix}`);
@@ -50,6 +79,21 @@ function AlternateClubRow({ title, club }: { title: string; club: ClubRec | null
   );
 }
 
+const scoreShotOutcome = (outcomes: ShotOutcome[]) => {
+  if (outcomes.includes('shank')) return 1;
+  if (outcomes.includes('hazard')) return 1;
+  if (outcomes.includes('green')) return 5;
+  if (outcomes.includes('fairway') && outcomes.includes('center')) return 4;
+  if (outcomes.includes('fairway')) return 4;
+  if (outcomes.includes('center')) return 4;
+  if (outcomes.includes('left') || outcomes.includes('right')) return 3;
+  if (outcomes.includes('short') || outcomes.includes('long')) return 2;
+  return 3;
+};
+
+const outcomeGroupFor = (outcome: ShotOutcome) =>
+  outcomeGroups.find((group) => group.values.includes(outcome))?.label ?? outcome;
+
 export default function CourseModeShell() {
   const [targetCarry, setTargetCarry] = useState('150');
   const [windDirection, setWindDirection] = useState<'none' | 'headwind' | 'tailwind'>('none');
@@ -60,6 +104,8 @@ export default function CourseModeShell() {
   const [result, setResult] = useState<CourseModeResult | null>(null);
   const [loggingShot, setLoggingShot] = useState(false);
   const [logStatus, setLogStatus] = useState<string | null>(null);
+  const [selectedClub, setSelectedClub] = useState<string>('8 Iron');
+  const [selectedOutcomes, setSelectedOutcomes] = useState<ShotOutcome[]>([]);
 
   const utilityRows = useMemo(() => {
     // TODO: Bind directional miss-bias from saved shot-pattern data once course-mode input includes target shape context.
@@ -121,16 +167,31 @@ export default function CourseModeShell() {
   };
 
   const logShot = async () => {
+    if (!selectedClub) {
+      setLogStatus('Choose the club you hit first.');
+      return;
+    }
+
+    if (!selectedOutcomes.length) {
+      setLogStatus('Add at least one shot outcome before saving.');
+      return;
+    }
+
     setLoggingShot(true);
     setLogStatus(null);
+
+    const normalizedOutcomes = [...selectedOutcomes].sort((a, b) => outcomeLabels[a].localeCompare(outcomeLabels[b]));
+    const outcomeText = normalizedOutcomes.map((outcome) => outcomeLabels[outcome]).join(', ');
+    const perceivedOutcome = scoreShotOutcome(normalizedOutcomes);
 
     const response = await fetch('/api/coach/drills', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        drillName: `Course Mode - ${featured.club}`,
+        drillName: `Course Mode - ${selectedClub}`,
         durationMins: 1,
-        notes: `Target ${result ? result.adjustedTargetCarry.toFixed(1) : targetCarry} yds | Wind ${windDirection} ${windMph} mph | Lie ${lie} | Confidence ${featured.confidence}`,
+        perceivedOutcome,
+        notes: `Club chosen: ${selectedClub} | Outcome: ${outcomeText} | Recommended club: ${featured.club} | Target ${result ? result.adjustedTargetCarry.toFixed(1) : targetCarry} yds | Wind ${windDirection} ${windMph} mph | Lie ${lie} | Confidence ${chosenClub.confidence}`,
         recommendationSource: 'manual'
       })
     }).catch(() => null);
@@ -141,20 +202,54 @@ export default function CourseModeShell() {
       return;
     }
 
-    setLogStatus(`Shot logged for ${featured.club}.`);
+    setSelectedOutcomes([]);
+    setLogStatus(`Shot logged for ${selectedClub}: ${outcomeText}.`);
     setLoggingShot(false);
   };
 
-  const featured = result?.recommended ?? {
-    club: '8 Iron',
-    carryMedian: 148,
-    carryStdDev: 7.5,
-    offlineStdDev: 13.5,
-    confidence: 'Medium' as Confidence,
-    sessionsUsed: 4,
-    trendHref: '/trends'
-  };
+  const featured = useMemo(
+    () =>
+      result?.recommended ?? {
+        club: '8 Iron',
+        carryMedian: 148,
+        carryStdDev: 7.5,
+        offlineStdDev: 13.5,
+        confidence: 'Medium' as Confidence,
+        sessionsUsed: 4,
+        trendHref: '/trends'
+      },
+    [result]
+  );
+  const clubChoices = useMemo(() => {
+    const options = [result?.recommended, result?.oneUp, result?.oneDown].filter((club): club is ClubRec => Boolean(club));
+    const deduped = new Map(options.map((club) => [club.club, club]));
+    if (!deduped.size) {
+      deduped.set(featured.club, featured);
+    }
+    return Array.from(deduped.values());
+  }, [featured, result]);
+
+  useEffect(() => {
+    if (!clubChoices.some((club) => club.club === selectedClub)) {
+      setSelectedClub(clubChoices[0]?.club ?? featured.club);
+    }
+  }, [clubChoices, featured.club, selectedClub]);
+
+  const chosenClub = clubChoices.find((club) => club.club === selectedClub) ?? featured;
   const navItems = buildPrimaryNav('More');
+
+  const toggleOutcome = (outcome: ShotOutcome) => {
+    const groupLabel = outcomeGroupFor(outcome);
+
+    setSelectedOutcomes((current) => {
+      if (current.includes(outcome)) {
+        return current.filter((item) => item !== outcome);
+      }
+
+      const next = current.filter((item) => outcomeGroupFor(item) !== groupLabel);
+      return [...next, outcome];
+    });
+  };
 
   return (
     <AppPageShell className="course-mode-page">
@@ -241,6 +336,48 @@ export default function CourseModeShell() {
               <strong>{row.value}</strong>
             </div>
           ))}
+        </div>
+      </AppCard>
+
+      <AppCard title="Shot Log" className="course-log-card" bodyClassName="course-log-card-body">
+        <div className="course-log-section">
+          <p className="course-log-label">Club Chosen</p>
+          <div className="course-log-club-grid">
+            {clubChoices.map((club) => (
+              <button
+                key={club.club}
+                type="button"
+                className={selectedClub === club.club ? 'course-log-chip active' : 'course-log-chip'}
+                onClick={() => setSelectedClub(club.club)}
+              >
+                <span>{club.club}</span>
+                <strong>{fmt(club.carryMedian, ' yds')}</strong>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="course-log-section">
+          <p className="course-log-label">Outcome</p>
+          <div className="course-log-groups">
+            {outcomeGroups.map((group) => (
+              <div key={group.label} className="course-log-group">
+                <span className="course-log-group-title">{group.label}</span>
+                <div className="course-log-chip-grid">
+                  {group.values.map((outcome) => (
+                    <button
+                      key={outcome}
+                      type="button"
+                      className={selectedOutcomes.includes(outcome) ? 'course-log-chip active' : 'course-log-chip'}
+                      onClick={() => toggleOutcome(outcome)}
+                    >
+                      {outcomeLabels[outcome]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </AppCard>
 
