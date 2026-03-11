@@ -75,6 +75,18 @@ const adjustTargetForWind = (targetCarry: number, windDirection: WindDirection, 
   return targetCarry - adjustment;
 };
 
+const findAdjacentClub = (
+  rankedByCarry: CourseModeClubRecommendation[],
+  club: string,
+  direction: 'up' | 'down'
+) => {
+  const idx = rankedByCarry.findIndex((entry) => entry.club === club);
+  if (idx < 0) return null;
+
+  const adjacentIndex = direction === 'up' ? idx - 1 : idx + 1;
+  return adjacentIndex >= 0 && adjacentIndex < rankedByCarry.length ? rankedByCarry[adjacentIndex] : null;
+};
+
 export async function getCourseModeRecommendation(
   userId: string,
   input: CourseModeInput
@@ -149,14 +161,14 @@ export async function getCourseModeRecommendation(
   const best = [...eligible].sort(
     (a, b) => Math.abs(a.carryMedian - adjustedTargetCarry) - Math.abs(b.carryMedian - adjustedTargetCarry)
   )[0];
-  const byCarry = [...eligible].sort((a, b) => b.carryMedian - a.carryMedian);
-  const idx = byCarry.findIndex((entry) => entry.club === best.club);
+  const byCarry = [...ranked].sort((a, b) => b.carryMedian - a.carryMedian);
 
   return {
     adjustedTargetCarry: Math.round(adjustedTargetCarry * 10) / 10,
     recommended: best,
-    oneUp: idx > 0 ? byCarry[idx - 1] : null,
-    oneDown: idx >= 0 && idx < byCarry.length - 1 ? byCarry[idx + 1] : null,
+    // Keep the main recommendation confidence-gated, but show true adjacent clubs in the bag ladder.
+    oneUp: findAdjacentClub(byCarry, best.club, 'up'),
+    oneDown: findAdjacentClub(byCarry, best.club, 'down'),
     candidates: eligible.length,
     excludedLowConfidence: ranked.length - eligible.length
   };
