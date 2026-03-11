@@ -33,9 +33,12 @@ export default function DashboardShell() {
         {showSettings && <ClubAliasSettings refreshKey={refreshKey} />}
       </section>
 
-      <section className="auth-panel">
-        <div className="section-header">
-          <h2>Performance & History</h2>
+      <section className="auth-panel performance-history-panel">
+        <div className="section-header performance-history-header">
+          <div className="performance-history-heading">
+            <h2>Performance & History</h2>
+            <p className="helper-text">Review long-term trends, open saved sessions, and jump into the coach summary first.</p>
+          </div>
           <button type="button" onClick={() => setShowHistory((value) => !value)}>
             {showHistory ? 'Hide' : 'Show'}
           </button>
