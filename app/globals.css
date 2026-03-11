@@ -1012,7 +1012,8 @@ ul {
 .course-input-card,
 .course-hero-card,
 .course-details-card,
-.course-utility-card {
+.course-utility-card,
+.course-log-card {
   display: grid;
   gap: 0.9rem;
 }
@@ -1020,7 +1021,8 @@ ul {
 .course-input-card-body,
 .course-details-card-body,
 .course-utility-card-body,
-.course-hero-card-body {
+.course-hero-card-body,
+.course-log-card-body {
   gap: 1rem;
 }
 
@@ -1138,6 +1140,82 @@ ul {
 
 .course-action-stack {
   gap: 0.8rem;
+}
+
+.course-log-section {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.course-log-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.course-log-groups {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.course-log-group {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.course-log-group-title {
+  color: var(--text-soft-strong);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.course-log-club-grid,
+.course-log-chip-grid {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.course-log-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 3rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--border-muted);
+  border-radius: 14px;
+  background: var(--surface-button);
+  color: var(--text);
+  font-weight: 700;
+  text-align: left;
+  box-shadow: var(--button-secondary-shadow);
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.course-log-chip strong {
+  color: var(--primary);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.course-log-chip.active {
+  color: var(--text-inverse);
+  border-color: color-mix(in srgb, var(--primary) 76%, black);
+  background: var(--button-primary-gradient);
+  box-shadow: var(--button-primary-active-shadow);
+}
+
+.course-log-chip.active strong {
+  color: inherit;
 }
 
 .course-bottom-nav {
